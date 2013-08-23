@@ -37,21 +37,21 @@ TCPCopy has little influence on the production system except occupying additiona
 There are two kinds of architectures that TCPCopy could be used depending on where to capture response packets.
 
 ###Traditional architecture
-![tcpcopy](https://raw.github.com/lazio579/tcpcopy/master/images/traditional_tcpcopy_archicture.GIF)
+![tcpcopy](https://raw.github.com/wangbin579/auxiliary/master/images/traditional_tcpcopy_archicture.GIF)
 
 Figure 1 shows the traditional architecture of TCPCopy. It consists of two components: TCPCopy Client (tcpcopy) and TCPCopy Server (intercept). TCPCopy Client is deployed on the production server. It captures the production workload, does the necessary processing (including TCP interaction simulation, network latency control, and common upper-layer interaction simulation), and transmits the reproduced workload to the test system in real-time by packet injection technique. TCPCopy Client also sends route information to TCPCopy Server, which would be used by TCPCopy Server to decide which TCPCopy Client each response information should return to. TCPCopy Server is deployed on the test server. It intercepts test server responses, extracts the response information, deals with the response packets, and sends response information back to TCPCopy Client through a special channel.  
 
-![tcpcopy](https://raw.github.com/lazio579/tcpcopy/master/images/traditional_tcpcopy_usage.GIF)
+![tcpcopy](https://raw.github.com/wangbin579/auxiliary/master/images/traditional_tcpcopy_usage.GIF)
 
 Figure 2 shows the architecture of using TCPCopy to do realistic testing of Internet server applications. In the online production system, when the end-users access the online application server, the application server may visit the backend services to process users’ requests if needed and return feedbacks to end-users. Meanwhile, TCPCopy Client (tcpcopy) is deployed on the production server to copy and send the reproduced workload to the test system. In the test system, the reproduced flow accesses the test application server, which would also visit the backend services if needed and then return feedbacks. TCPCopy Server (intercept)  handles these feedbacks and returns the necessary response information to TCPCopy Client (tcpcopy). In addition, as both TCPCopy Client (tcpcopy) and TCPCopy Server (intercept) could be deployed on several servers, TCPCopy has good scalability. It could copy live flow on one or several production servers to one test server.  
 
 ###Advanced architecture
 
-![tcpcopy](https://raw.github.com/lazio579/tcpcopy/master/images/advanced_tcpcopy_archicture.GIF)
+![tcpcopy](https://raw.github.com/wangbin579/auxiliary/master/images/advanced_tcpcopy_archicture.GIF)
 
 As you can see, intercept runs at an independent machine which is different from test server and captues response packets at the data link layer. The only operation involved in test server is adding route commands to route response packets to the machine which runs the TCPCopy server. All these changes lead to more realistic testing because ip queue or nfqueue will not affect the test server. Also the potential of intercept is enhanced because capturing packets in data link is more powerful and multiple instances of intercept could also be supported.
 
-![tcpcopy](https://raw.github.com/lazio579/tcpcopy/master/images/advanced_tcpcopy_usage.GIF)
+![tcpcopy](https://raw.github.com/wangbin579/auxiliary/master/images/advanced_tcpcopy_usage.GIF)
 
 Figure 4 shows the advanced architecture of using TCPCopy to do realistic testing of Internet server applications. TCPCopy server(intercept) is removed from machines which run Upper-layer applications. 
 
