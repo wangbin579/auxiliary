@@ -28,7 +28,7 @@ TCPCopy has little influence on the production system except occupying additiona
   - Prove the new system is stable and find bugs that only occur in the real world
 * Regression testing
 * performance comparison
-  - For instance, you can use tcpcopy to [compare the performance of Apache and Nginx](https://raw.github.com/wangbin579/tcpcopy/master/docs/Apache%202.4%20vs.%20Nginx%20-%20A%20comparison%20under%20real%20online%20applications.pdf)
+  - For instance, you can use tcpcopy to [compare the performance of Apache and Nginx](https://raw.github.com/wangbin579/auxiliary//master/docs/Apache%202.4%20vs.%20Nginx%20-%20A%20comparison%20under%20real%20online%20applications.pdf)
     
 
 
