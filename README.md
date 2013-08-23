@@ -53,7 +53,7 @@ As you can see, intercept runs at an independent machine which is different from
 
 ![tcpcopy](https://raw.github.com/wangbin579/auxiliary/master/images/advanced_tcpcopy_usage.GIF)
 
-Figure 4 shows the advanced architecture of using TCPCopy to do realistic testing of Internet server applications. TCPCopy server(intercept) is removed from machines which run Upper-layer applications. 
+Figure 4 shows the advanced architecture of using TCPCopy to do realistic testing of Internet server applications. TCPCopy server(intercept) is removed from machines which run upper-layer applications. 
 
 
 It is much more complicated when using Advanced architecture, but it is more real and more powerful.
