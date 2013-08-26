@@ -3,22 +3,10 @@
 TCPCopy is a TCP stream replay tool to support real testing of Internet server applications. 
 
 
-
 ##Description
-Although the real live flow is important for the test of Internet server applications, it is hard to simulate it as online environments are too complex. To support more realistic testing of Internet server applications, we proposes a live flow reproduction tool – TCPCopy, which could generate the test workload that is similar to the production workload. TCPCopy consists of two components: TCPCopy Client (tcpcopy) and TCPCopy Server (intercept). TCPCopy Client (tcpcopy) is deployed on the production system and it copies live flow data, does necessary modifications and sends them to the test system in real-time. TCPCopy Server (intercept) is deployed on the test system and it returns necessary response information to TCPCopy Client (tcpcopy). To the test server, the reproduced workload is just from end-users. Currently, TCPCopy has been widely used by companies in China.   
+Although the real live flow is important for the test of Internet server applications, it is hard to simulate it as online environments are too complex. To support more realistic testing of Internet server applications, we proposes a live flow reproduction tool – TCPCopy, which could generate the test workload that is similar to the production workload. TCPCopy consists of two components: the TCPCopy Client (tcpcopy) and the TCPCopy Server (intercept). The TCPCopy Client (tcpcopy) is deployed on the production system and it copies live flow data, does necessary modifications and sends them to the test system in real-time. The TCPCopy Server (intercept) is deployed on the test system and it returns necessary response information to the TCPCopy Client (tcpcopy). To the test server, the reproduced workload is just from end-users. Currently, TCPCopy has been widely used by companies in China.   
 
 TCPCopy has little influence on the production system except occupying additional CPU, memory and bandwidth. Moreover, the reproduced workload is similar to the production workload in request diversity, network latency and resource occupation.
-
-
-##Design Goals
-1. Reproduction of realistic Internet production workload
-  - Traditionally, Internet server applications are often deployed online without testing with realistic Internet production workloads. Thus, developers are often not sure whether their applications could work well when deployed online. If we could introduce the online complexity (e.g., request diversity and network latencies) to the test system, we believe most problems could be found before actual deployment. 
-2. Little influence on production systems
-  - Generally, online production systems should not be affected. For example, online service interruptions are often unacceptable. TCPCopy aims to affect the online system as little as possible.  
-3. Better use of online production workloads
-  - Currently, online Internet production workloads are often unused and the intranet network bandwidth is not sufficiently utilized. It would be fascinating if TCPCopy could utilize the online production workload to support performance testing of Internet server applications. 
-4. Long-term testing support
-  - As some problems only appear after the system runs for a long time, it is necessary to design a tool that supports long-term testing with real Internet workload. TCPCopy will try to support such long-term testing.
 
 
 ##Scenarios:
@@ -27,36 +15,43 @@ TCPCopy has little influence on the production system except occupying additiona
 * Live testing
   - Prove the new system is stable and find bugs that only occur in the real world
 * Regression testing
-* performance comparison
+* Performance comparison
   - For instance, you can use tcpcopy to [compare the performance of Apache and Nginx](https://raw.github.com/wangbin579/auxiliary/master/docs/Apache%202.4%20vs.%20Nginx%20-%20A%20comparison%20under%20real%20online%20applications.pdf)
     
 
 
 ##Architecture 
 
-There are two kinds of architectures that TCPCopy could be used depending on where to capture response packets.
+There are two ways to use TCPCopy: adopting the traditional architecture or using the advanced architecture.
 
 ###Traditional architecture
-![tcpcopy](https://raw.github.com/wangbin579/auxiliary/master/images/traditional_tcpcopy_archicture.GIF)
+![tcpcopy](https://raw.github.com/wangbin579/auxiliary/master/images/traditional_archicture.GIF)
 
-Figure 1 shows the traditional architecture of TCPCopy. It consists of two components: TCPCopy Client (tcpcopy) and TCPCopy Server (intercept). TCPCopy Client is deployed on the production server. It captures the production workload, does the necessary processing (including TCP interaction simulation, network latency control, and common upper-layer interaction simulation), and transmits the reproduced workload to the test system in real-time by packet injection technique. TCPCopy Client also sends route information to TCPCopy Server, which would be used by TCPCopy Server to decide which TCPCopy Client each response information should return to. TCPCopy Server is deployed on the test server. It intercepts test server responses, extracts the response information, deals with the response packets, and sends response information back to TCPCopy Client through a special channel.  
 
-![tcpcopy](https://raw.github.com/wangbin579/auxiliary/master/images/traditional_tcpcopy_usage.GIF)
+As shown in Figure 1, TCPCopy consists of two parts: the TCPCopy client (tcpcopy) and the TCPCopy server (intercept). While the TCPCopy client runs on the online server and captures the online requests, the TCPCopy server runs on the target test server and does some assistant work, such as passing response info to the TCPCopy client and filtering outbound traffic.
 
-Figure 2 shows the architecture of using TCPCopy to do realistic testing of Internet server applications. In the online production system, when the end-users access the online application server, the application server may visit the backend services to process users’ requests if needed and return feedbacks to end-users. Meanwhile, TCPCopy Client (tcpcopy) is deployed on the production server to copy and send the reproduced workload to the test system. In the test system, the reproduced flow accesses the test application server, which would also visit the backend services if needed and then return feedbacks. TCPCopy Server (intercept)  handles these feedbacks and returns the necessary response information to TCPCopy Client (tcpcopy). In addition, as both TCPCopy Client (tcpcopy) and TCPCopy Server (intercept) could be deployed on several servers, TCPCopy has good scalability. It could copy live flow on one or several production servers to one test server.  
+The TCPCopy client (tcpcopy) utilizes raw socket input technique by default to capture the online packets at the network layer and does the necessary processing (including TCP interaction simulation, network latency control, and common upper-layer interaction simulation), and uses raw socket output technique by default to send packets to the target server. 
+
+The TCPCopy server (intercept) is responsible for passing the response header to the TCPCopy client. By setting the iptables command, locally generated response packets will be sent to the corresponding kernel module (ip_queue or nfqueue), and then the kernel module will attempt to deliver the packets to the TCPCopy server (intercept), which will extract response header information and determine whether to drop the packet or not. To make the TCPCopy client send the next packet, the TCPCopy server (intercept) often needs to send the response header to the TCPCopy client using a special channel. When the TCPCopy client receives the response header, it utilizes the header information to modify the attributes of online packets and continues to send another packet. 
+It should be noticed that the responses from the target server are dropped at the network layer of the target server and not return to the end-user by default.
+
+
+![tcpcopy](https://raw.github.com/wangbin579/auxiliary/master/images/traditional_usage.GIF)
+
+Figure 2 shows the architecture of using TCPCopy to do realistic testing of Internet server applications. In the online production system, when the end-users access the online application server, the application server may visit the backend services to process users’ requests if needed and return feedbacks to end-users. Meanwhile, the TCPCopy Client (tcpcopy) is deployed on the production server to copy and send the reproduced workload to the test server. In the test system, the reproduced flow accesses the test application server, which would also visit the backend services if needed and then return feedbacks. The TCPCopy Server (intercept)  handles these feedbacks and returns the necessary response information to the TCPCopy Client (tcpcopy). In addition, as both the TCPCopy Client (tcpcopy) and the TCPCopy Server (intercept) could be deployed on several servers, TCPCopy has good scalability. It could copy live flow on one or several production servers to one test server.  
 
 ###Advanced architecture
 
-![tcpcopy](https://raw.github.com/wangbin579/auxiliary/master/images/advanced_tcpcopy_archicture.GIF)
+The difference between the advanced framework and the traditional framework is that the TCPCopy server (intercept) runs on a separate machine instead of the test server. Thus, the test tasks will not be influenced by the TCPCopy server (intercept).
 
-As you can see, intercept runs at an independent machine which is different from test server and captues response packets at the data link layer. The only operation involved in test server is adding route commands to route response packets to the machine which runs the TCPCopy server. All these changes lead to more realistic testing because ip queue or nfqueue will not affect the test server. Also the potential of intercept is enhanced because capturing packets in data link is more powerful and multiple instances of intercept could also be supported.
+![tcpcopy](https://raw.github.com/wangbin579/auxiliary/master/images/advanced_archicture.GIF)
 
-![tcpcopy](https://raw.github.com/wangbin579/auxiliary/master/images/advanced_tcpcopy_usage.GIF)
+The advanced framework of TCPCopy can be seen in Figure 3. Assume the online server is running online services, the test server is used to do the test tasks and the assistant server is adopted to run the TCPCopy server (intercept). The only operation needed in the test server for TCPCopy is setting appropriate route commands to route response packets to the assistant server. The TCPCopy server (intercept) at the assistant server captures response packets at the data link layer and passes the response header to the TCPCopy client on the online server.  These changes lead to more realistic testing because the test task in the test server is no longer influenced by the TCPCopy server (intercept). Moreover, as the TCPCopy server (intercept) captures packets more efficiently at the data link layer and multiple instances of the TCPCopy server (intercept) could run concurrently, the processing ability of the TCPCopy server (intercept) is also enhanced.
 
-Figure 4 shows the advanced architecture of using TCPCopy to do realistic testing of Internet server applications. TCPCopy server(intercept) is removed from machines which run upper-layer applications. 
+![tcpcopy](https://raw.github.com/wangbin579/auxiliary/master/images/advanced_usage.GIF)
 
+Figure 4 shows the advanced architecture of using TCPCopy to do realistic testing of Internet server applications. The TCPCopy server (intercept) runs on an independent machine which no longer influences the test tasks. 
 
-It is much more complicated when using Advanced architecture, but it is more real and more powerful.
 
 
 ##Quick start
@@ -88,22 +83,26 @@ Two quick start options are available:
 	--enable-dlinject   send packets at data link layer instead of IP layer
     --enable-rlantency  add more lantency control
 
-###Recommended configure
+###Recommended use
 
-1. Recommended traditional use
+1. Recommended use of TCPCopy with traditional architecture
   - ./configure  
-2. Recommended advanced use
+2. Recommended use of TCPCopy with advanced architecture
   - ./configure --enable-advanced --enable-pcap  
-3. mysql replay with mysql in test server working in skip-grant-table mode
+3. Recommended use of mysql replay
   - ./configure --enable-mysqlsgt  
-4. offline replay  
+    It should be noticed that mysql in the test server needs to work in skip-grant-table mode
+4. Use of offline replay (TCPCopy also supports offline replay of TCP stream which reads packets from the pcap file)  
   - ./configure --enable-offline  
 
 
 ##Running TCPCopy
 
 ###Traditional usage guide
-    Assume "./configure" is configured
+    Assume TCPCopy with "./configure" is configured
+
+	After installing TCPCopy, you have to deploy the TCPCopy client (tcpcopy) on the online source
+	server and the TCPCopy server (intercept) on the target server. 
 
     Run:
     a) on the target host (root privilege is required):
@@ -124,33 +123,37 @@ Two quick start options are available:
 
 
 ###Advanced usage guide:
-	Assume "./configure --enable-advanced --enable-pcap" is configured
+	Assume TCPCopy with "./configure --enable-advanced --enable-pcap" is configured on the online server 
+	and the assistant server.
 
 	Run:
-	a) On the target server 1 which runs test server applications (root privilege is required):
-	    Set route command appropriately to route response packets to the target server 2
+	a) On the target test server which runs test server applications (root privilege is required):
+	    Set route command appropriately to route response packets to the assistant server
+
         For example:
+
+	    Assume 61.135.233.219 is the actual IP address which is the default gateway, while 61.135.233.161
+        is the IP address of the assistant server. We set the following route commands to route all extenal 
+        responses to the assistant server.
+
            route del default gw 61.135.233.219
            route add default gw 61.135.233.161
-	    61.135.233.219 is the actual IP address which is the default gateway, while 61.135.233.161
-        is the IP address of target server 2. We set these route commands to route all extenal 
-        responses to the target server 2.
 
-	b) On the target server 2 which runs intercept(TCPCopy server) (root privilege is required):
+	b) On the assistant server which runs intercept (the TCPCopy server) (root privilege is required):
 	    sudo ./intercept -F <filter> -i <device,> 
 	
 	c) On the online source server (root privilege is required):
 	    sudo ./tcpcopy -x localServerPort-targetServerIP:targetServerPort -s <intercept server,> -i <device,> 
 	  
-	Note that the filter format is the same as pcap filter.
+	Note that the filter format is the same as the pcap filter.
 	For example:
-	  ./intercept -i eth0 -F 'tcp and src port 11511' –d
-	Intercept will capture response packets of tcp based application which occupies port 11511 from device eth0
+	  ./intercept -i eth0 -F 'tcp and src port 80' –d
+	Intercept will capture response packets of the TCP based application which listens on port 80 from device eth0 
 
 
 
 ###Additional commands
-./tcpcopy -h or ./intercept -h for more details
+Please execute "./tcpcopy -h" or "./intercept -h" for more details
 
 
 ##Note
@@ -162,7 +165,7 @@ Two quick start options are available:
 
 
 
-##Example using traditional architecture
+##Example (TCPCopy with traditional architecture)
 
 Suppose there are two online hosts, 1.2.3.25 and 1.2.3.26. And 1.2.3.161 is the target host. Port 11311 is used as local server port and port 11511 is used as remote target server port. We use tcpcopy to test if 1.2.3.161 can process 2X requests than a host can serve.
 
@@ -210,45 +213,44 @@ Clearly, the target host can process 2X of requests a source host can serve.How 
 There are several factors that could influence TCPCopy, which will be introduced in detail in the following sections.
 
 ###1. Capture Interface
-TCPCopy utilizes raw socket input interface by default to capture packets in the IP layer on the online server. The system kernel may lose some packets when the system is busy. Thus, the related system parameters should be set appropriately. 
+TCPCopy utilizes raw socket input interface by default to capture packets at the network layer on the online server. The system kernel may lose some packets when the system is busy. Thus, the related system parameters should be set appropriately. 
 
-If you configure --enable-pcap, then TCPCopy could capture packets in the data link layer and could also filter packets in the kernel.
+If you configure TCPCopy with "--enable-pcap", then TCPCopy could capture packets at the data link layer and could also filter packets in the kernel.
 
 ###2. Send Interface
-TCPCopy utilizes raw socket output interface by default to send packets in the IP layer to a target server. The system kernel may encounter problems and not send all the packets successfully. For example, when the packet size is larger than MTU, raw socket output interface would refuse to send these large packets. In TCPCopy 0.5 or above versions, with our special processing, large packets are supported. 
+TCPCopy utilizes raw socket output interface by default to send packets at the network layer to a target server. The system kernel may encounter problems and not send all the packets successfully. For example, when the packet size is larger than MTU, raw socket output interface would refuse to send these large packets. In TCPCopy 0.5 or above versions, with our special processing, large packets are supported.
 
-If you configure --enable-dlinject, then TCPCopy could send packets in the data link layer to a target server.
+If you configure TCPCopy with "--enable-dlinject", then TCPCopy could send packets at the data link layer to a target server.
 
 ###3.On the Way to the Target Server 
 When a packet is sent by the TCPCopy client (tcpcopy), it may encounter many challenges before reaching the target server. As the source IP address in the packet is still the end-user’s IP address other than the online server’s, some security devices may take it for an invalid or forged packet and drop it. In this case, when you use tcpdump to capture packets on the target server, no packets from the expected end-users will be captured. To know whether you are under such circumstances, you can choose a target server in the same network segment to do a test. If packets could be sent to the target server successfully in the same network segment but unsuccessfully across network segments, your packets may be dropped halfway. 
 
 To solve this problem, we suggest deploying the TCPCopy client (tcpcopy) and the TCPCopy server (intercept) on servers in the same network segment. There’s also another solution with the help of a proxy in the same network segment. The TCPCopy client could send packets to the proxy and then the proxy would send the corresponding requests to the target server in another network segment.
 
-Note that visiting another virtual machine in the same segment is the same as visiting a machine in anoter network segment.
+Note that deploying the TCPCopy server on one virtual machine in the same segment may face the above problems.
 
 ####4. OS of the Target Server
-The target server may set rpfilter, which would check whether the source IP address in the packet is forged. If yes, the packet will be dropped in the IP layer.
+The target server may set rpfilter, which would check whether the source IP address in the packet is forged. If yes, the packet will be dropped at the network layer.
 
-If the target server could not receive any requests although packets can be captured by tcpdump on the target server, you should check if you have any corresponding rpfilter settings. If set, you have to remove the related settings to let the packets pass through the IP layer.
+If the target server could not receive any requests although packets can be captured by tcpdump on the target server, you should check if you have any corresponding rpfilter settings. If set, you have to remove the related settings to let the packets pass through the network layer.
 
-There are also other possibilities that cause TCPCopy not working if you use the traditional tcpcopy, such as iptables setting problems.
+There are also other reasons that cause TCPCopy not working, such as iptables setting problems in the traditional framework.
 
 ###5. Applications on the Target Server
 It is likely that the application on the target server could not process all the requests in time. On the one hand, bugs in the application may make the request not be responded for a long time. On the other hand, some protocols above TCP layer may only process the first request in the socket buffer and leave the remaining requests in the socket buffer unprocessed. 
 
 ###6. Netlink Socket Interface 
-Note that the following problem only occursin the traditional usage when configure --disable-advanced and IP Queue is used.
+The following problem only occurs in the traditional framework when IP Queue is used.
 
-Packet loss also occurs when ip queue module transfers the response packet to the TCPCopy server (intercept) under a high-pressure situation. By using command “cat /proc/net/ip_queue”, you can check the state of ip queue. 
+Packet loss also occurs when ip queue module transfers the response packet to the TCPCopy server (intercept) under a high-pressure situation. By using command "cat /proc/net/ip_queue", you can check the state of ip queue. 
 
 If the value of queue dropped increases continually, ip_queue_maxlen should be set larger. For example, the following command modifies the default queue length 1024 to 4096.
  > echo 4096 > /proc/sys/net/ipv4/ip_queue_maxlen
 
-If the value of netlink dropped increases continually, rmem_max and wmem_max should be set larger. 
+If the value of netlink dropped increases continually, rmem_max and wmem_max should be set larger.
 Here is an example.
  >sysctl -w net.core.rmem_max=16777216  
  >sysctl -w net.core.wmem_max=16777216
-
 
 
 
@@ -265,7 +267,7 @@ Here is an example.
 + 2012.11  version 0.6.5, support nfqueue
 + 2013.03  version 0.7.0, support lvs
 + 2013.06  version 0.8.0, support new configure option with configure --enable-advanced and optimize intercept
-+ 2013.08  version 0.9.0, pcap injection is supported and GPLv2 code has been removed for mysql replay,etc
++ 2013.08  version 0.9.0, pcap injection is supported and GPLv2 code has been removed for mysql replay
 
 
 
