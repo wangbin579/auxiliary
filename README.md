@@ -16,7 +16,7 @@ TCPCopy has little influence on the production system except occupying additiona
   - Prove the new system is stable and find bugs that only occur in the real world
 * Regression testing
 * Performance comparison
-  - For instance, you can use tcpcopy to [compare the performance of Apache and Nginx](https://raw.github.com/wangbin579/auxiliary/master/docs/Apache%202.4%20vs.%20Nginx%20-%20A%20comparison%20under%20real%20online%20applications.pdf)
+  - For instance, you can use TCPCopy to [compare the performance of Apache and Nginx](https://raw.github.com/wangbin579/auxiliary/master/docs/Apache%202.4%20vs.%20Nginx%20-%20A%20comparison%20under%20real%20online%20applications.pdf)
     
 
 
@@ -28,12 +28,12 @@ There are two ways to use TCPCopy: adopting the traditional architecture or usin
 ![tcpcopy](https://raw.github.com/wangbin579/auxiliary/master/images/traditional_archicture.GIF)
 
 
-As shown in Figure 1, TCPCopy consists of two parts: the TCPCopy client (tcpcopy) and the TCPCopy server (intercept). While the TCPCopy client runs on the online server and captures the online requests, the TCPCopy server runs on the target test server and does some assistant work, such as passing response info to the TCPCopy client and filtering outbound traffic.
+As shown in Figure 1, TCPCopy consists of two parts: the TCPCopy client (tcpcopy) and the TCPCopy server (intercept). While the TCPCopy client runs on the online server and captures the online requests, the TCPCopy server runs on the test server and does some assistant work, such as passing response info to the TCPCopy client and filtering outbound traffic.
 
-The TCPCopy client (tcpcopy) utilizes raw socket input technique by default to capture the online packets at the network layer and does the necessary processing (including TCP interaction simulation, network latency control, and common upper-layer interaction simulation), and uses raw socket output technique by default to send packets to the target server. 
+The TCPCopy client (tcpcopy) utilizes raw socket input technique by default to capture the online packets at the network layer and does the necessary processing (including TCP interaction simulation, network latency control, and common upper-layer interaction simulation), and uses raw socket output technique by default to send packets to the test server. 
 
 The TCPCopy server (intercept) is responsible for passing the response header to the TCPCopy client. By setting the iptables command, locally generated response packets will be sent to the corresponding kernel module (ip_queue or nfqueue), and then the kernel module will attempt to deliver the packets to the TCPCopy server (intercept), which will extract response header information and determine whether to drop the packet or not. To make the TCPCopy client send the next packet, the TCPCopy server (intercept) often needs to send the response header to the TCPCopy client using a special channel. When the TCPCopy client receives the response header, it utilizes the header information to modify the attributes of online packets and continues to send another packet. 
-It should be noticed that the responses from the target server are dropped at the network layer of the target server and not return to the end-user by default.
+It should be noticed that the responses from the test server are dropped at the network layer of the test server and not return to the end-user by default.
 
 
 ![tcpcopy](https://raw.github.com/wangbin579/auxiliary/master/images/traditional_usage.GIF)
@@ -119,36 +119,37 @@ Two quick start options are available:
         ./intercept
 
     b) on the source host (root privilege is required):
-      sudo ./tcpcopy -x localServerPort-targetServerIP:targetServerPort
+       ./tcpcopy -x localServerPort-targetServerIP:targetServerPort
 
 
 ###Advanced usage guide:
-	Assume TCPCopy with "./configure --enable-advanced --enable-pcap" is configured on the online server 
-	and the assistant server.
+	Assume TCPCopy with "./configure --enable-advanced --enable-pcap" is configured on the online
+	server and the assistant server.
 
 	Run:
-	a) On the target test server which runs test server applications (root privilege is required):
+	a) On the test server which runs test server applications (root privilege is required):
 	    Set route command appropriately to route response packets to the assistant server
 
         For example:
 
-	    Assume 61.135.233.219 is the actual IP address which is the default gateway, while 61.135.233.161
-        is the IP address of the assistant server. We set the following route commands to route all extenal 
-        responses to the assistant server.
+	    Assume 61.135.233.219 is the actual IP address which is the default gateway, while 
+		61.135.233.161 is the IP address of the assistant server. We set the following route 
+		commands to route all extenal responses to the assistant server.
 
            route del default gw 61.135.233.219
            route add default gw 61.135.233.161
 
 	b) On the assistant server which runs intercept (the TCPCopy server) (root privilege is required):
-	    sudo ./intercept -F <filter> -i <device,> 
+	  ./intercept -F <filter> -i <device,> 
 	
 	c) On the online source server (root privilege is required):
-	    sudo ./tcpcopy -x localServerPort-targetServerIP:targetServerPort -s <intercept server,> -i <device,> 
+	  ./tcpcopy -x localServerPort-targetServerIP:targetServerPort -s <intercept server,> -i <device,> 
 	  
 	Note that the filter format is the same as the pcap filter.
 	For example:
 	  ./intercept -i eth0 -F 'tcp and src port 80' –d
-	Intercept will capture response packets of the TCP based application which listens on port 80 from device eth0 
+	Intercept will capture response packets of the TCP based application which listens on port 80 from 
+	device eth0 
 
 
 
