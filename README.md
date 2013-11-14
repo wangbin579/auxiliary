@@ -42,11 +42,11 @@ Figure 2 shows the architecture of using TCPCopy to do realistic testing of Inte
 
 ###Advanced architecture
 
-The difference between the advanced framework and the traditional framework is that the TCPCopy server (intercept) runs on a separate machine instead of the test server. Thus, the test tasks will not be influenced by the TCPCopy server (intercept).
+The difference between the advanced architecture and the traditional architecture is that the TCPCopy server (intercept) runs on a separate machine instead of the test server. Thus, the test tasks will not be influenced by the TCPCopy server (intercept).
 
 ![tcpcopy](https://raw.github.com/wangbin579/auxiliary/master/images/advanced_archicture.GIF)
 
-The advanced framework of TCPCopy can be seen in Figure 3. Assume the online server is running online services, the test server is used to do the test tasks and the assistant server is adopted to run the TCPCopy server (intercept). The only operation needed in the test server for TCPCopy is setting appropriate route commands to route response packets to the assistant server. The TCPCopy server (intercept) at the assistant server captures response packets at the data link layer and passes the response header to the TCPCopy client on the online server.  These changes lead to more realistic testing because the test task in the test server is no longer influenced by the TCPCopy server (intercept). Moreover, as the TCPCopy server (intercept) captures packets more efficiently at the data link layer and multiple instances of the TCPCopy server (intercept) could run concurrently, the processing ability of the TCPCopy server (intercept) is also enhanced.
+The advanced architecture of TCPCopy can be seen in Figure 3. Assume the online server is running online services, the test server is used to do the test tasks and the assistant server is adopted to run the TCPCopy server (intercept). The only operation needed in the test server for TCPCopy is setting appropriate route commands to route response packets to the assistant server. The TCPCopy server (intercept) at the assistant server captures response packets at the data link layer and passes the response header to the TCPCopy client on the online server.  These changes lead to more realistic testing because the test task in the test server is no longer influenced by the TCPCopy server (intercept). Moreover, as the TCPCopy server (intercept) captures packets more efficiently at the data link layer and multiple instances of the TCPCopy server (intercept) could run concurrently, the processing ability of the TCPCopy server (intercept) is also enhanced.
 
 ![tcpcopy](https://raw.github.com/wangbin579/auxiliary/master/images/advanced_usage.GIF)
 
@@ -75,26 +75,33 @@ Two quick start options are available:
     --enable-debug      compile TCPCopy with debug support (saved in a log file)
     --enable-mysqlsgt   run TCPCopy at mysql skip-grant-tables mode(recommended)
     --enable-mysql      run TCPCopy at mysql mode
-	--enable-offline    run TCPCopy at offline mode
-	--enable-pcap       run TCPCopy at pcap mode
+    --enable-offline    run TCPCopy at offline mode
+    --enable-pcap       run TCPCopy at pcap mode
     --enable-udp        run TCPCopy at udp mode
-	--enable-nfqueue    run the TCPCopy server (intercept) at nfqueue mode
-	--enable-advanced   run TCPCopy at advanced mode (advanced archecture) 
-	--enable-dlinject   send packets at data link layer instead of IP layer
+    --enable-nfqueue    run the TCPCopy server (intercept) at nfqueue mode
+    --enable-advanced   run TCPCopy at advanced mode (advanced archecture) 
+    --enable-dlinject   send packets at the data link layer instead of the IP layer
     --enable-rlantency  add more lantency control
 
 ###Recommended use
 
-1. Recommended use of TCPCopy with traditional architecture
-  - ./configure  
-2. Recommended use of TCPCopy with advanced architecture
-  - ./configure --enable-advanced --enable-pcap  
-3. Recommended use of mysql replay
-  - ./configure --enable-mysqlsgt  
-    It should be noticed that mysql in the test server needs to work in skip-grant-table mode
-4. Use of offline replay (TCPCopy also supports offline replay of TCP stream which reads packets from the pcap file)  
-  - ./configure --enable-offline  
+    1. Recommended use of TCPCopy with traditional architecture
+    ./configure  
+           
+    2. Recommended use of TCPCopy with advanced architecture
+    ./configure --enable-advanced                 #The TCPCopy client (tcpcopy)
+    ./configure --enable-advanced --enable-pcap   #The TCPCopy server (intercept)
 
+    3. Recommended use of mysql replay
+    ./configure --enable-mysqlsgt  
+    
+    It should be noticed that mysql in the test server needs to work in skip-grant-table mode.
+
+    4. Use of offline replay 
+    ./configure --enable-offline  
+    
+    TCPCopy also supports offline replay of TCP stream which reads packets from the pcap file.
+    
 
 ##Running TCPCopy
 
@@ -123,8 +130,9 @@ Two quick start options are available:
 
 
 ###Advanced usage guide:
-	Assume TCPCopy with "./configure --enable-advanced --enable-pcap" is configured on the online
-	server and the assistant server.
+	Assume tcpcopy with "./configure --enable-advanced" is configured on the online
+	server and intercept with "./configure --enable-advanced --enable-pcap" is configured  
+	on the assistant server.
 
 	Run:
 	a) On the test server which runs test server applications (root privilege is required):
@@ -141,15 +149,16 @@ Two quick start options are available:
 
 	b) On the assistant server which runs intercept (the TCPCopy server) (root privilege is required):
 	  ./intercept -F <filter> -i <device,> 
+	  
+	  Note that the filter format is the same as the pcap filter.
+	  For example:
+	  ./intercept -i eth0 -F 'tcp and src port 80' -d
+	  Intercept will capture response packets of the TCP based application which listens on port 80 
+	  from device eth0 
 	
 	c) On the online source server (root privilege is required):
-	  ./tcpcopy -x localServerPort-targetServerIP:targetServerPort -s <intercept server,> -i <device,> 
+	  ./tcpcopy -x localServerPort-targetServerIP:targetServerPort -s <intercept server,>  
 	  
-	Note that the filter format is the same as the pcap filter.
-	For example:
-	  ./intercept -i eth0 -F 'tcp and src port 80' –d
-	Intercept will capture response packets of the TCP based application which listens on port 80 from 
-	device eth0 
 
 
 
@@ -193,7 +202,7 @@ Here we use traditional tcpcopy to perform the above test task.
        1.2.3.161:
            27954 root      15   0  284m  57m  828 S 58.6  1.4 409:18.94 asyn_server
            1476  root      15   0 14784  11m  308 S  7.7  0.3  49:36.93 intercept
-    Access log analysis:
+    Access log analysis (Note that the following log files are generated by upper-layer applications):
        1.2.3.25:
            $ wc -l access_1109_09.log
              7867867,  2185 reqs/sec
@@ -241,7 +250,7 @@ There are also other reasons that cause TCPCopy not working, such as iptables se
 It is likely that the application on the target server could not process all the requests in time. On the one hand, bugs in the application may make the request not be responded for a long time. On the other hand, some protocols above TCP layer may only process the first request in the socket buffer and leave the remaining requests in the socket buffer unprocessed. 
 
 ###6. Netlink Socket Interface 
-The following problem only occurs in the traditional framework when IP Queue is used.
+The following problem only occurs in the traditional architecture when IP Queue is used.
 
 Packet loss also occurs when ip queue module transfers the response packet to the TCPCopy server (intercept) under a high-pressure situation. By using command "cat /proc/net/ip_queue", you can check the state of ip queue. 
 
@@ -256,19 +265,22 @@ Here is an example.
 
 
 ##Release History
-+ 2011.09  version 0.1, TCPCopy released
-+ 2011.11  version 0.2, fix some bugs
-+ 2011.12  version 0.3, support mysql copy 
-+ 2012.04  version 0.3.5, add support for multiple copies of the source request
-+ 2012.05  version 0.4, fix some bugs 
-+ 2012.07  version 0.5, support large packets (>MTU)
-+ 2012.08  version 0.6, support offline replaying from pcap files to the target server
-+ 2012.10  version 0.6.1, support intercept at multi-threading mode
-+ 2012.11  version 0.6.3, fix fast retransmitting problem
-+ 2012.11  version 0.6.5, support nfqueue
-+ 2013.03  version 0.7.0, support lvs
-+ 2013.06  version 0.8.0, support new configure option with configure --enable-advanced and optimize intercept
-+ 2013.08  version 0.9.0, pcap injection is supported and GPLv2 code has been removed for mysql replay
++ 2011.09  v0.1    TCPCopy released
++ 2011.11  v0.2    fix some bugs
++ 2011.12  v0.3    support mysql copy 
++ 2012.04  v0.3.5  add support for multiple copies of the source request
++ 2012.05  v0.4    fix some bugs 
++ 2012.07  v0.5    support large packets (>MTU)
++ 2012.08  v0.6    support offline replaying from pcap files to the target server
++ 2012.10  v0.6.1  support intercept at multi-threading mode
++ 2012.11  v0.6.3  fix the fast retransmitting problem
++ 2012.11  v0.6.5  support nfqueue
++ 2013.03  v0.7.0  support lvs
++ 2013.06  v0.8.0  support new configure option with "configure --enable-advanced" and optimize intercept
++ 2013.08  v0.9.0  support pcap injection, remove GPLv2 code for mysql replay and fix some bugs
++ 2013.09  v0.9.2  add the compatibility check and fix several bugs.
++ 2013.10  v0.9.5  fix many problems including the timestamp problem 
++ 2013.11  v0.9.6  support setting the maximal length of the nfnetlink queue and fix some bugs
 
 
 
