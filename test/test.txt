@@ -1,0 +1,7 @@
+1) install java
+2) install resin
+3) deploy wars under resin's webapps diretory
+4) use tcpdump to record sessions
+5) configure tcpcopy with '--enable-offline --enable-debug'
+6) use tcpcopy to replay recorded pcap file
+
