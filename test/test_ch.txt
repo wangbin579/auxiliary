@@ -1,0 +1,8 @@
+步骤：
+1) install java
+2) install resin(推荐3.0系列）
+3) 把本目录的war包安装到resin的webapps目录
+4) 为测试录制pcap文件
+   在浏览器端访问resin部署的所有项目，并利用tcpdump录制下来
+5) configure tcpcopy with '--enable-offline --enable-debug'
+6) 利用tcpcopy离线回放pcap文件，用来校验效果好坏
