@@ -31,196 +31,149 @@ void output_stat();
 
 /* 用户会话状态相关数据，涉及到真实客户端，tcpcopy伪造的客户端，测试服务器三方的关系 */
 typedef struct sess_state_machine_s{
-    /* TCP状态 */
+    /* 被伪造的用户会话的TCP状态 */
     uint32_t status:8;
     /* 测试服务器对于请求处理是否响应慢的标识 */
     uint32_t resp_slow:1;
     /* 真实客户端是否关闭的标识 */
     uint32_t recv_client_close:1;
-    /* 是否已经重传的标识 */
+    /* 针对被伪造的用户会话,是否已经重传的标识 */
     uint32_t vir_already_retransmit:1;
-    /* 是否是新的重传标识，用于统计成功重传的次数 */
+    /* 针对被伪造的用户会话,是否是新的重传标识，仅用于统计成功重传的次数 */
     uint32_t vir_new_retransmit:1;
-    /* 用户会话是否处于CLOSING状态，即同时关闭的标识 */
+    /* 针对被伪造的用户会话，是否处于CLOSING状态，即同时关闭的标识 */
     uint32_t simul_closing:1;
-    /* 是否发送了reset数据包给测试服务器或者接受到了测试服务器的reset数据包 */
+    /* 针对被伪造的用户会话，是否发送了reset数据包给测试服务器或者接受到了测试服务器的reset数据包 */
     uint32_t reset:1;
-    /* 是否因为fin数据包，需要把seq加1 */
+    /* 针对被伪造的用户会话，是否因为fin数据包，需要把seq加1 */
     uint32_t fin_add_seq:1;
-    /* 用户会话是否结束的标识 */
+    /* 针对被伪造的用户会话，其会话是否结束的标识 */
     uint32_t sess_over:1;
-    /* src or client closed flag */
+    /* 被伪造的客户端是否关闭的标识 */
     uint32_t src_closed:1;
-    /* dst or backend closed flag */
+    /* 测试服务器是否关闭用户会话的标识 */
     uint32_t dst_closed:1;
-    /* slide window full flag */
+    /* 测试服务器滑动窗口是否为慢的标识 */
     uint32_t last_window_full:1;
-    /* candidate response waiting flag */
+    /* 是否需要等测试服务器上层应用响应的标识 */
     uint32_t candidate_response_waiting:1;
+    /* 纯用户请求的标识（测试服务器上层应用不需要回复请求) */
     uint32_t req_no_resp:1;
+    /* 是否是从收到测试服务器上层应用响应后，来发送被缓冲的后续请求的标识 */
     uint32_t send_reserved_from_bak_payload:1;
-    /* delay sent flag because of flow control */
+    /* 针对被伪造的用户会话，因为流量控制而延缓发送的标识 */
     uint32_t delay_sent_flag:1;
-    /* waiting previous packet flag */
+    /* 针对被伪造的用户会话，是否在等前面缺失的数据包(主要是由因为分段的数据包无序到达导致的) */
     uint32_t is_waiting_previous_packet:1;
-    /* This indicates if the session intercepted the syn packets from client
-     * or it has faked the syn packets */
+    /* 针对被伪造的用户会话，是否已经发送syn数据包 */
     uint32_t req_syn_ok:1;
+    /* 是否在截获到真实客户端fin数据包之前，记录下真实客户端数据包的ack seq */
     uint32_t record_ack_before_fin:1;
-    /* flag that avoids using the first handshake ack seq */
+    /* 针对真实的客户端，最近被复制的数据包中的ack seq是否有效的标识 */
     uint32_t req_valid_last_ack_sent:1;
-    /*
-     * This indicates if we intercepted the packets halfway 
-     * including backend already closed
-     */
+    /* 针对被伪造的用户会话，是否半路截获真实用户会话的标识 */
     uint32_t req_halfway_intercepted:1;
+    /* 针对被伪造的用户会话，其数据包是否被加上了timestamp的TCP选项 */
     uint32_t timestamped:1;
-    /* This indicates if the syn packets from backend is received */
+    /* 是否收到测试服务器syn数据包的标识 */
     uint32_t resp_syn_received:1;
-    /* session candidate erased flag */
+    /* 用户会话候选被删除的标识 */
     uint32_t sess_candidate_erased:1;
-    /* session reused flag */
+    /* 是否存在下一个相同四元组(客户端ip，客户端端口，服务器ip，服务器端口)的会话的标识 */
     uint32_t sess_more:1;
-    /* port transfered flag */
+    /* 客户端端口是否被改变的标识 */
     uint32_t port_transfered:1;
-    /* if set, it will not save the packet to unack list */
+    /* 是否需要把目前待发的数据包放入未确认的数据包链表的标识 */
     uint32_t unack_pack_omit_save_flag:1;
-    /* This indicates if server sends response first */
+    /* 会话过程中，是否收到服务器应用的greet数据包(服务器端先发送payload数据包)的标识 */
     uint32_t resp_greet_received:1;
-    /* This indicates if it needs to wait server response first */
+    /* 会话过程中，是否需要服务器先传递应用数据包的标识 */
     uint32_t need_resp_greet:1;
-    /* seset packet sent flag */
+    /* 是否传递了reset数据包给测试服务器 */
     uint32_t reset_sent:1;
-#if (TCPCOPY_PAPER)
-    uint32_t rtt_cal:2;
-#endif
-#if (TCPCOPY_MYSQL_BASIC)
-    /* the second auth checked flag */
-    uint32_t mysql_sec_auth_checked:1;
-    /* request begin flag for mysql */
-    uint32_t mysql_req_begin:1;
-    /* This indicates if it needs second auth */
-    uint32_t mysql_sec_auth:1;
-    /* This indicates if it has sent the first auth */
-    uint32_t mysql_first_auth_sent:1;
-    /* This indicates if the session has received login packet from client */
-    uint32_t mysql_req_login_received:1;
-    /* This indicates if the session has prepare statment */
-    uint32_t mysql_prepare_stat:1;
-    /* This indicates if the first execution is met */
-    uint32_t mysql_first_execution:1;
-#endif
-
 }sess_state_machine_t;
 
 typedef struct session_s{
-    /* hash key for this session */
+    /* session的key */
     uint64_t hash_key;
 
-#if (TCPCOPY_MYSQL_BASIC)
-    /* seq diff between virtual sequence and client sequence */
-    uint32_t mysql_vir_req_seq_diff;
-#endif
-
-    /* src or client ip address(network byte order) */
+    /* 客户短ip地址(network byte order) */
     uint32_t src_addr;
-    /* dst or backend ip address(network byte order) */
+    /* 测试服务器ip地址(network byte order) */
     uint32_t dst_addr;
-    /* online ip address(network byte order) */
+    /* 在线服务器ip地址(network byte order) */
     uint32_t online_addr;
+    /* 测试服务器tcp针对此会话所能够缓冲的buffer大小 */
     uint32_t srv_window;
+    /* 回复测试服务器的timestamp */
     uint32_t ts_ec_r;
+    /* 客户端自身的timestamp */
     uint32_t ts_value;
+    /* window scale值 */
     uint16_t wscale;
-    /* orginal src or client port(network byte order, never changed) */
+    /* 客户端最初的端口号(network byte order) */
     uint16_t orig_src_port;
-    /* src or client port(host byte order and  it may be changed) */
+    /* 正在被使用的客户端端口号(host byte order) */
     uint16_t src_h_port;
-    /* dst or backend port(network byte order) */
+    /* 测试服务器应用的端口号(network byte order) */
     uint16_t dst_port;
-    /* online port(network byte order) */
+    /* 在线服务器应用的端口号(network byte order) */
     uint16_t online_port;
-    /* faked src or client port(network byte order) */
+    /* 被伪造的客户端端口号(network byte order) */
     uint16_t faked_src_port;
-#if (TCPCOPY_PAPER)
-    /* round trip time */
-    long     rtt;
-    long     min_rtt;
-    long     max_rtt;
-    long     base_rtt;
-    long     resp_unack_time;
-    long     first_resp_unack_time;
-    long     response_content_time;
-#endif
 
-    /* These values will be sent to backend just for cheating */
-    /* Virtual acknowledgement sequence that sends to backend */
-    /* (host byte order) */
+    /* 发送给测试服务器的ack seq(host byte order) */
     uint32_t vir_ack_seq;
-    /* virtual next expected sequence (host byte order) */
+    /* 下一次发送给测试服务器的seq(host byte order) */
     uint32_t vir_next_seq;
 
-    /* response variables */
-    /* last acknowledgement seq from backend response (host byte order) */
+    /* 测试服务器针对此会话，回复的最近一次的tcp的ack seq(host byte order) */
     uint32_t resp_last_ack_seq;
-    /* last seq from backend response (host byte order) */
+    /* 测试服务器针对此会话，回复的最近一次的tcp的seq(host byte order) */
     uint32_t resp_last_seq;
 
-    /* captured variables */
-    /* only refer to online values */
+    /* 下面变量针对在线服务器的数据包的特性 */
     /***********************begin************************/
-    /* last syn sequence of client packet */
+    /* 捕获的在线请求数据包的最近一次的原始syn sequence(network byte order) */
     uint32_t req_last_syn_seq;
-    /* last sequence of client content packet which has been sent */
+    /* 最近发送给测试服务器的带有payload的数据包的原始seq(host byte order) */
     uint32_t req_last_cont_sent_seq;
-    /* last ack sequence of client packet which is sent to bakend */
+    /* 最近发送给测试服务器的数据包的原始ack seq(host byte order) */
     uint32_t req_last_ack_sent_seq;
+    /* 收到客户端fin数据包之前的最近的ack seq(host byte order) */
     uint32_t req_ack_before_fin;
-    /* last client content packet's ack sequence which is captured */
+    /* 最近捕获的来自客户端的ack seq(host byte order) */ 
     uint32_t req_cont_last_ack_seq;
-    /* current client content packet's ack seq which is captured */
+    /* 这次捕获的来自客户端的ack seq(host byte order) */ 
     uint32_t req_cont_cur_ack_seq;
     /***********************end***************************/
 
-    /* record time */
-    /* last update time */
+    /* 会话的最近一次更新时间（只要有数据包到达，不管从哪一个方向）*/
     time_t   last_update_time;
-    /* session create time */
+    /* 会话创建时间 */
     time_t   create_time;
-    /* time of last receiving backend content */
+    /* 最近一次接受到测试服务器应用的响应数据包时间 */
     time_t   resp_last_recv_cont_time;
-    /* time of sending the last content packet */
+    /* 最近一次发送带有payload的数据包给测试服务器的时间 */
     time_t   req_last_send_cont_time;
-    /* kinds of states of session */
+    /* 会话状态 */
     sess_state_machine_t sm; 
 
-    /* id from client ip header */
+    /* 客户端请求数据包的ip头部信息的id*/
     uint32_t req_ip_id:16;
-    /*
-     * The number of the response packets last received 
-     * which have the same acknowledgement sequence.
-     * This is for checking retransmission Required from backend
-     */
+    /* 收到测试服务器的重复ack包的数量 */
     uint32_t resp_last_same_ack_num:8;
-#if (TCPCOPY_MYSQL_BASIC)
-    /* mysql executed times for COM_QUERY(in COM_STMT_PREPARE situation) */
-    uint32_t mysql_execute_times:8;
-#endif
+    /* 发送给测试服务器的数据链路层的源mac地址 */
     unsigned char *src_mac;
+    /* 发送给测试服务器的数据链路层的目的mac地址 */
     unsigned char *dst_mac;
 
+    /* 未发送的数据包列表 */
     link_list *unsend_packets;
+    /* 下一个具有同样key的session的的数据包列表 */
     link_list *next_sess_packs;
+    /* 未被确认的数据包列表 */
     link_list *unack_packets;
-#if (TCPCOPY_MYSQL_BASIC)
-    /* mysql special packets for reconnection */
-    link_list *mysql_special_packets;
-#endif
-#if (TCPCOPY_MYSQL_ADVANCED)
-    char mysql_scramble[SCRAMBLE_LENGTH + 1];
-    char mysql_seed323[SEED_323_LENGTH + 1];
-    char mysql_password[MAX_PASSWORD_LEN];
-#endif
 
 }session_t;
 
