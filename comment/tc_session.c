@@ -2,43 +2,49 @@
 #include <xcopy.h>
 #include <tcpcopy.h>
 
+/* 所有用户会话的table */
 static hash_table *sessions_table;
+/* 端口变化的table,以找到原始端口号 */
 static hash_table *tf_port_table;
 
 
-/* total sessions deleted */
+/* 被删除的session的总和 */
 static uint64_t leave_cnt            = 0;
-/* total obsolete sessions */
+/* 因为被过时删除的session的总和 */
 static uint64_t obs_cnt              = 0;
-/* total client syn packets */
+/* 捕获到的客户端syn数据包的总和 */
 static uint64_t clt_syn_cnt          = 0;
+/* 捕获到的客户端数据包的总和 */
 static uint64_t captured_cnt         = 0;
-/* total client content packets */
+/* 捕获到的带有payload的客户端数据包的总和 */
 static uint64_t clt_cont_cnt         = 0;
-/* total client packets */
+/* 捕获到的被过滤后的客户端数据包的总和 */
 static uint64_t clt_packs_cnt        = 0;
-/* total client packets sent to backend */
+/* 发送给测试服务器的数据包的总和 */
 static uint64_t packs_sent_cnt       = 0;
+/* 发送给测试服务器的fin数据包的总和 */
 static uint64_t fin_sent_cnt         = 0;
+/* 发送给测试服务器的reset数据包的总和 */
 static uint64_t rst_sent_cnt         = 0;
-/* total client content packets sent to backend */
+/* 发送给测试服务器的带有payload数据包的总和 */
 static uint64_t con_packs_sent_cnt   = 0;
-/* total response packets */
+/* 收到来自测试服务器的响应包的总和 */
 static uint64_t resp_cnt             = 0;
-/* total response content packets */
+/* 收到来自测试服务器的带有payload的响应包的总和 */ 
 static uint64_t resp_cont_cnt        = 0;
-/* total connections successfully cheated */
+/* 成功和测试服务器建立连接的总和 */
 static uint64_t conn_cnt             = 0;
-/* total successful retransmission */
+/* 成功重传的总和 */ 
 static uint64_t retrans_succ_cnt     = 0;
-/* total retransmission */
+/* 重传的总和 */ 
 static uint64_t retrans_cnt          = 0;
+/* 捕获到的客户端重传数据包的总和 */
 static uint64_t clt_con_retrans_cnt  = 0;
-/* total reconnections for backend */
+/* 因为测试服务器提前关闭连接后，重新和测试服务器建立连接的总和 */
 static uint64_t recon_for_closed_cnt = 0;
-/* total reconnections for halfway interception */
+/* 因半途截获session而重新建立连接的总和 */
 static uint64_t recon_for_no_syn_cnt = 0;
-/* start time for excuting the process function */
+/* 开始处理有效数据包的时间 */
 static time_t   start_p_time         = 0;
 
 
