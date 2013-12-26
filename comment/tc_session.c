@@ -4,7 +4,7 @@
 
 /* 所有用户会话的table */
 static hash_table *sessions_table;
-/* 端口变化的table,以找到原始端口号 */
+/* 端口变化的table,以便找到原始端口号 */
 static hash_table *tf_port_table;
 
 
@@ -48,6 +48,7 @@ static uint64_t recon_for_no_syn_cnt = 0;
 static time_t   start_p_time         = 0;
 
 
+/* 判断用户会话是否结束的函数 */
 static bool
 check_session_over(session_t *s)
 {
@@ -63,6 +64,7 @@ check_session_over(session_t *s)
 }
 
 
+/* 裁剪包的内容，使其传递尽可能少的内容给测试服务器 */
 static bool
 trim_packet(session_t *s, tc_ip_header_t *ip_header,
         tc_tcp_header_t *tcp_header, uint32_t diff)
@@ -88,6 +90,7 @@ trim_packet(session_t *s, tc_ip_header_t *ip_header,
     return true;
 }
 
+/* 更新包的timestamp */
 static void 
 update_timestamp(session_t *s, tc_tcp_header_t *tcp_header)
 {
@@ -145,7 +148,7 @@ update_timestamp(session_t *s, tc_tcp_header_t *tcp_header)
 
 
 /*
- * it is called by fast retransmit
+ * 重传数据包给测试服务器
  */
 static void
 wrap_retransmit_ip_packet(session_t *s, unsigned char *frame)
@@ -170,7 +173,7 @@ wrap_retransmit_ip_packet(session_t *s, unsigned char *frame)
         update_timestamp(s, tcp_header);
     }
 
-    /* set the destination ip and port */
+    /* 在这里，设置数据包的目的ip地址和目的端口 */
     ip_header->daddr = s->dst_addr;
     tcp_header->dest = s->dst_port;
 
@@ -183,7 +186,6 @@ wrap_retransmit_ip_packet(session_t *s, unsigned char *frame)
             tcp_opt = (unsigned char *) ((char *) tcp_header
                     + (TCP_HEADER_DOFF_MIN_VALUE << 2));
             payload = (unsigned char *) (tcp_opt + tcp_opt_len);
-            /* overide tcp options just for fast retransmit */
             memmove(tcp_opt, payload, cont_len);
         }
         tot_len = tot_len - tcp_opt_len;
@@ -197,7 +199,7 @@ wrap_retransmit_ip_packet(session_t *s, unsigned char *frame)
         retrans_cnt++;
     }
 
-    /* It should be set to zero for tcp checksum */
+    /* 调用tcpcsum，必须先设置为0 */
     tcp_header->check = 0;
     tcp_header->check = tcpcsum((unsigned char *) ip_header,
             (unsigned short *) tcp_header, (int) (tot_len - size_ip));
@@ -230,7 +232,7 @@ wrap_retransmit_ip_packet(session_t *s, unsigned char *frame)
 
 
 /*
- * wrap sending ip packet function
+ * 发送数据包给测试服务器
  */
 static void
 wrap_send_ip_packet(session_t *s, unsigned char *frame, bool client)
@@ -261,13 +263,12 @@ wrap_send_ip_packet(session_t *s, unsigned char *frame, bool client)
         update_timestamp(s, tcp_header);
     }
 
-    /* set the destination ip and port */
+    /* 在这里，设置数据包的目的ip地址和目的端口 */
     ip_header->daddr = s->dst_addr;
     tcp_header->dest = s->dst_port;
 
     s->vir_next_seq  = ntohl(tcp_header->seq);
 
-    /* add virtual next seq when meeting syn or fin packet */
     if (tcp_header->syn || tcp_header->fin) {
 
         if (tcp_header->syn) {
@@ -296,14 +297,13 @@ wrap_send_ip_packet(session_t *s, unsigned char *frame, bool client)
         s->req_last_cont_sent_seq  = ntohl(tcp_header->seq);
         s->vir_next_seq = s->vir_next_seq + cont_len;
         if (s->sm.unack_pack_omit_save_flag) {
-            /*It must be a retransmission packet */
             s->sm.vir_new_retransmit = 1;
         } else {
             con_packs_sent_cnt++;
         }
     } 
 
-    /* It should be set to zero for tcp checksum */
+    /* 调用tcpcsum，必须先设置为0 */
     tcp_header->check = 0;
     tcp_header->check = tcpcsum((unsigned char *) ip_header,
             (unsigned short *) tcp_header, (int) (tot_len - size_ip));
@@ -350,6 +350,7 @@ wrap_send_ip_packet(session_t *s, unsigned char *frame, bool client)
 }
 
 
+/* 设置通用的tcp和ip头部信息 */
 static void 
 fill_pro_common_header(tc_ip_header_t *ip_header, tc_tcp_header_t *tcp_header)
 {
@@ -373,7 +374,7 @@ fill_pro_common_header(tc_ip_header_t *ip_header, tc_tcp_header_t *tcp_header)
 
 
 /*
- * send faked rst packet to backend passively
+ * 构造待发送的reset数据包,以清理测试服务器的tcp资源
  */
 static void
 send_faked_passive_rst(session_t *s)
@@ -401,7 +402,6 @@ send_faked_passive_rst(session_t *s)
     f_tcp_header->ack     = 1;
 
     if (s->sm.fin_add_seq) {
-        /* This is because of '++' in wrap_send_ip_packet */
         f_tcp_header->seq = htonl(s->vir_next_seq - 1); 
     } else {
         f_tcp_header->seq = htonl(s->vir_next_seq); 
@@ -415,6 +415,7 @@ send_faked_passive_rst(session_t *s)
 #if (!TCPCOPY_SINGLE)
 #if (TCPCOPY_DR)
 
+/* 发送路由信息给intercept，以便响应包信息能够返回给相应的tcpcopy */
 static bool
 send_router_info(session_t *s, uint16_t type)
 {
@@ -430,6 +431,7 @@ send_router_info(session_t *s, uint16_t type)
     msg.target_ip = s->dst_addr;
     msg.target_port = s->dst_port;
 
+    /* 发送路由信息给每一个intercept */
     for (i = 0; i < clt_settings.real_servers.num; i++) {
 
         if (!clt_settings.real_servers.active[i]) {
@@ -462,12 +464,14 @@ send_router_info(session_t *s, uint16_t type)
  
 #else
 
+/* 发送路由信息给intercept，以便响应包信息能够返回给相应的tcpcopy */
 static bool
 send_router_info(session_t *s, uint16_t type)
 {
     int                      fd;
     msg_client_t             msg;
 
+    /* 发送路由信息给相应的intercept */
     fd = address_find_sock(s->online_addr, s->online_port);
     if (fd == -1) {
         tc_log_debug0(LOG_WARN, 0, "sock invalid");
@@ -502,7 +506,7 @@ session_rel_dynamic_mem(session_t *s)
     
     if (!check_session_over(s)) {
 
-        /* send the last rst packet to backend */
+        /* 清理测试服务器的tcp资源 */
         send_faked_passive_rst(s);
         s->sm.sess_over = 1;
     }
@@ -541,10 +545,10 @@ session_rel_dynamic_mem(session_t *s)
 }
 
 
+/* 初始化用户session表等信息 */
 void
 init_for_sessions()
 {
-    /* create 65536 slots for session table */
     sessions_table = hash_create(65536);
     strcpy(sessions_table->name, "session-table");
 
@@ -552,7 +556,7 @@ init_for_sessions()
     strcpy(tf_port_table->name, "transfer port table");
 }
 
-
+/* 销毁session表等相关资源 */
 void
 destroy_for_sessions()
 {
@@ -566,7 +570,6 @@ destroy_for_sessions()
 
     if (sessions_table != NULL) {
 
-        /* free session table */
         for (i = 0; i < sessions_table->size; i++) {
 
             list = sessions_table->lists[i];
@@ -579,7 +582,7 @@ destroy_for_sessions()
 
                     s = hn->data;
                     hn->data = NULL;
-                    /* delete session */
+                    /* 销毁用户会话的内存 */
                     session_rel_dynamic_mem(s);
                     if (!hash_del(sessions_table, s->hash_key)) {
                         tc_log_info(LOG_ERR, 0, "wrong del");
@@ -596,7 +599,7 @@ destroy_for_sessions()
         sessions_table = NULL;
     }
 
-    /* free transfer port table */
+    /* 销毁端口映射表 */
     if (tf_port_table != NULL) {
         hash_destroy(tf_port_table);
         free(tf_port_table);
@@ -607,7 +610,7 @@ destroy_for_sessions()
 
 }
 
-
+/* 初始化用户会话相关数据 */
 static void
 session_init(session_t *s, int flag)
 {
@@ -648,7 +651,7 @@ session_init(session_t *s, int flag)
 
 
 /*
- * We only support one more session which has the same hash key
+ * 目前只支持保留一份后续的具有相同key的用户会话过程
  */
 static void
 session_init_for_next(session_t *s)
@@ -676,6 +679,7 @@ session_init_for_next(session_t *s)
 }
 
 
+/* 创建用户会话所需要的数据结构 */
 static session_t *
 session_create(tc_ip_header_t *ip_header, tc_tcp_header_t *tcp_header)
 {
@@ -712,6 +716,7 @@ session_create(tc_ip_header_t *ip_header, tc_tcp_header_t *tcp_header)
 }
 
 
+/* 添加用户会话的数据到session表中去 */
 static session_t *
 session_add(uint64_t key, tc_ip_header_t *ip_header,
         tc_tcp_header_t *tcp_header)
@@ -730,6 +735,7 @@ session_add(uint64_t key, tc_ip_header_t *ip_header,
 }
 
 
+/* 保留包的相关数据到列表中去 */
 static void 
 save_packet(link_list *list, tc_ip_header_t *ip_header,
         tc_tcp_header_t *tcp_header)
@@ -745,10 +751,7 @@ save_packet(link_list *list, tc_ip_header_t *ip_header,
 
 
 /* 
- * This happens when server's response comes first(mysql etc)
- * Only support one greeting packet here
- * If packet's syn and ack are not according to the tcp protocol,
- * it may be mistaken to be a greeting packet
+ * 是否在等待测试服务器端的greet数据包(测试服务器先发送payload数据包)
  */
 static inline bool
 is_wait_greet(session_t *s, tc_ip_header_t *ip_header,
@@ -761,16 +764,10 @@ is_wait_greet(session_t *s, tc_ip_header_t *ip_header,
         ack = ntohl(tcp_header->ack_seq);
         seq = ntohl(tcp_header->seq);
 
-        /* 
-         * For mysql, waiting is implied by the following
-         * when backend is closed
-         * (TODO should be optimized)
-         */
         if (after(ack, s->req_last_ack_sent_seq) && seq == s->vir_next_seq) {
             s->sm.need_resp_greet = 1;
             if (!s->sm.resp_greet_received) {
                 tc_log_debug1(LOG_INFO, 0, "it should wait:%u", s->src_h_port);
-                /* It must wait for response */
                 return true;
             } else {
                 s->sm.need_resp_greet = 0;
@@ -787,7 +784,7 @@ is_wait_greet(session_t *s, tc_ip_header_t *ip_header,
 }
 
 /*
- * send reserved packets to backend
+ * 发送缓存的数据包给测试服务器
  */
 static int
 send_reserved_packets(session_t *s)
@@ -840,7 +837,7 @@ send_reserved_packets(session_t *s)
         cur_seq    = ntohl(tcp_header->seq);
         if (after(cur_seq, s->vir_next_seq)) {
 
-            /* We need to wait for previous packet */
+            /* 需要等待先前的数据包(由于数据包到达的顺序跟发送的顺序可能是不一样的) */
             tc_log_debug0(LOG_DEBUG, 0, "we need to wait prev pack");
             s->sm.is_waiting_previous_packet = 1;
             s->sm.candidate_response_waiting = 0;
@@ -849,7 +846,6 @@ send_reserved_packets(session_t *s)
 
             cont_len   = TCP_PAYLOAD_LENGTH(ip_header, tcp_header);
             if (cont_len > 0) {
-                /* special disposure here */
                 tc_log_debug1(LOG_DEBUG, 0, "reserved strange:%u", 
                         s->src_h_port);
                 diff = s->vir_next_seq - cur_seq;
@@ -939,14 +935,14 @@ send_reserved_packets(session_t *s)
                 if (s->req_ack_before_fin == cur_ack || 
                         after(cur_ack, server_closed_ack))
                 {
-                    /* active close from client */
+                    /* 判断出客户端先关闭连接 */
                     s->sm.src_closed = 1;
                     s->sm.status |= CLIENT_FIN;
                     tc_log_debug1(LOG_DEBUG, 0, "active close from clt:%u",
                             s->src_h_port);
 
                 } else {
-                    /* server active close */
+                    /* 判断出在线服务器先关闭连接 */
                     tc_log_debug1(LOG_DEBUG, 0, "server active close:%u", 
                             s->src_h_port);
                     omit_transfer = true;
@@ -968,7 +964,6 @@ send_reserved_packets(session_t *s)
                     tc_log_debug1(LOG_DEBUG, 0, "record:%u", s->src_h_port);
                 }
             }
-            /* waiting the response pack or the sec handshake pack */
             if (s->sm.candidate_response_waiting
                     || s->sm.status != SYN_CONFIRM)
             {
@@ -1034,7 +1029,7 @@ check_overwhelming(session_t *s, const char *message,
 
 
 /*
- * This happens in uploading large file situations
+ * 判断用户会话过程是否被卡住了
  */
 static bool
 is_session_dead(session_t *s)
@@ -1044,9 +1039,9 @@ is_session_dead(session_t *s)
     packs_unsend = s->unsend_packets->size;
     diff = tc_time() - s->req_last_send_cont_time;
 
-    /* more than 2 seconds */
+    /* 如果超过2秒 */
     if (diff > 2) {
-        /* if there are more than 5 packets unsend */
+        /* 如果缓存的用户会话数据包的个数超过5个 */
         if (packs_unsend > 5) {
             return true;
         }
@@ -1085,23 +1080,26 @@ static void activate_dead_sessions()
     }
 }
 
-/* check if session is obsolete */
+/* 判断用户会话过程是否过时了 */
 static int
 check_session_obsolete(session_t *s, time_t cur, time_t threshold_time,
         time_t keepalive_timeout)
 {
     int threshold = 256, result, diff;
     
-    /* if not receiving response for a long time */
+    /* 如果很久没有收到测试服务器上层应用的响应 */
     if (s->resp_last_recv_cont_time < threshold_time) {
         if (s->unsend_packets->size > 0) {
+            /* 存在缓冲数据包 */
             obs_cnt++;
             tc_log_debug2(LOG_DEBUG, 0, "timeout, unsend number:%u,p:%u",
                     s->unsend_packets->size, s->src_h_port);
             return OBSOLETE;
         }  else {
             if (s->sm.status >= SEND_REQ) {
+                /* 已经传递过应用请求 */
                 if (s->resp_last_recv_cont_time < keepalive_timeout) {
+                    /* 超时 */
                     obs_cnt++;
                     tc_log_debug1(LOG_DEBUG, 0, "keepalive timeout ,p:%u", 
                             s->src_h_port);
@@ -1126,15 +1124,15 @@ check_session_obsolete(session_t *s, time_t cur, time_t threshold_time,
     }
 
     diff = cur - s->req_last_send_cont_time;
-    /* check if the session is idle for a long time */
+    /* 判断是否这个用户会话是否闲置了很久 */
     if (diff < 30) {
         threshold = threshold << 2;
         if (diff <= 3) {
-            /* if it is idle for less than or equal to 3 seconds */
+            /* 如果闲置的时间小于等于3秒，则增大缓存数据包的数量的阈值 */
             threshold = threshold << 4;
         }
         if (s->sm.last_window_full) {
-            /* if slide window is full */
+            /* 如果测试服务器相应的tcp缓存区满了，则增大缓存数据包的数量的阈值 */
             threshold = threshold << 2;
         }
     }
@@ -1164,7 +1162,7 @@ check_session_obsolete(session_t *s, time_t cur, time_t threshold_time,
 
 
 /*
- * clear TCP timeout sessions
+ * 处理超时的用户会话
  */
 static void
 clear_timeout_sessions()
@@ -1206,9 +1204,7 @@ clear_timeout_sessions()
                         threshold_time, keepalive_timeout);
                 if (OBSOLETE == result) {
                     hn->data = NULL;
-                    /* release memory for session internals */
                     session_rel_dynamic_mem(s);
-                    /* remove session from table */
                     if (!hash_del(sessions_table, s->hash_key)) {
                         tc_log_info(LOG_ERR, 0, "wrong del:%u", s->src_h_port);
                     }
@@ -1222,10 +1218,8 @@ clear_timeout_sessions()
 
 
 /*
- * retransmit the packets to backend.
- * only support fast retransmission here
- * (assume the network between online and target server is very well,
- * so other congestion situations are not detected here )
+ * 处理重传的细节
+ * 目前只支持快速重传机制
  */
 static bool 
 retransmit_packets(session_t *s, uint32_t expected_seq)
@@ -1240,7 +1234,7 @@ retransmit_packets(session_t *s, uint32_t expected_seq)
     tc_tcp_header_t  *tcp_header;
 
     if (s->sm.status == SYN_SENT) {
-        /* don't retransmit the first handshake packet */
+        /* 目前对第一次握手数据包不进行重传,目的是为了不影响在线系统 */
         return true;
     }
 
@@ -1256,8 +1250,9 @@ retransmit_packets(session_t *s, uint32_t expected_seq)
         cur_seq    = ntohl(tcp_header->seq);  
 
         if (!is_success) {
+            /* TODO 目前找重传包的机制需要改进 */
             if (cur_seq == expected_seq) {
-                /* fast retransmission */
+                /* 找到快速重传的数据包 */
                 is_success = true;
                 tc_log_info(LOG_NOTICE, 0, "fast retransmit:%u",
                         s->src_h_port);
@@ -1281,7 +1276,7 @@ retransmit_packets(session_t *s, uint32_t expected_seq)
 
 
 /*
- * update retransmission packets
+ * 更新未确认数据包列表
  */
 static void
 update_retransmission_packets(session_t *s)
@@ -1319,7 +1314,7 @@ update_retransmission_packets(session_t *s)
 
 
 /*
- * check if the reserved container has content left
+ * 检测用户会话的缓存的列表，是否存在上层应用的数据没有发出去
  */
 static bool
 check_reserved_content_left(session_t *s)
@@ -1351,7 +1346,7 @@ check_reserved_content_left(session_t *s)
 
 
 /*
- * send faked syn packet to backend.
+ * 伪造syn数据包,并发送出去
  */
 static void
 send_faked_syn(session_t *s, tc_ip_header_t *ip_header,
@@ -1403,6 +1398,7 @@ send_faked_syn(session_t *s, tc_ip_header_t *ip_header,
     s->sm.resp_syn_received = 0;
 }
 
+/* 填充timestamp时间戳信息 */
 static void 
 fill_timestamp(session_t *s, tc_tcp_header_t *tcp_header)
 {
@@ -1425,7 +1421,7 @@ fill_timestamp(session_t *s, tc_tcp_header_t *tcp_header)
 
 
 /*
- * send faked syn ack packet(the third handshake packet) to back 
+ * 发送伪造的第三次握手数据包给测试服务器
  */
 static void 
 send_faked_third_handshake(session_t *s, tc_ip_header_t *ip_header,
@@ -1444,7 +1440,6 @@ send_faked_third_handshake(session_t *s, tc_ip_header_t *ip_header,
     if (s->sm.timestamped) {
         f_ip_header->tot_len  = htons(FAKE_IP_TS_DATAGRAM_LEN);
         f_tcp_header->doff    = TCP_HEADER_DOFF_TS_VALUE;
-        /* fill options here */
         fill_timestamp(s, f_tcp_header);
     } else {
         f_ip_header->tot_len  = htons(FAKE_MIN_IP_DATAGRAM_LEN);
@@ -1453,15 +1448,9 @@ send_faked_third_handshake(session_t *s, tc_ip_header_t *ip_header,
 
     f_ip_header->id       = htons(++s->req_ip_id);
     f_ip_header->saddr    = s->src_addr;
-
-    /* here record online ip address */
     f_ip_header->daddr    = s->online_addr; 
-
     f_tcp_header->source  = tcp_header->dest;
-
-    /* here record online port */
     f_tcp_header->dest    = s->online_port;
-
     f_tcp_header->ack     = 1;
     f_tcp_header->seq     = tcp_header->ack_seq;
     
@@ -1473,7 +1462,7 @@ send_faked_third_handshake(session_t *s, tc_ip_header_t *ip_header,
 
 
 /*
- * send faked ack packet to backend from the backend packet
+ * 根据测试服务器的响应包，来伪造ack确认数据包并发送出去
  */
 static void 
 send_faked_ack(session_t *s, tc_ip_header_t *ip_header, 
@@ -1493,7 +1482,6 @@ send_faked_ack(session_t *s, tc_ip_header_t *ip_header,
     if (s->sm.timestamped) {
         f_ip_header->tot_len  = htons(FAKE_IP_TS_DATAGRAM_LEN);
         f_tcp_header->doff    = TCP_HEADER_DOFF_TS_VALUE;
-        /* fill options here */
         fill_timestamp(s, f_tcp_header);
     } else {
         f_ip_header->tot_len  = htons(FAKE_MIN_IP_DATAGRAM_LEN);
@@ -1505,10 +1493,10 @@ send_faked_ack(session_t *s, tc_ip_header_t *ip_header,
     f_tcp_header->source  = tcp_header->dest;
     f_tcp_header->ack     = 1;
     if (active) {
-        /* seq determined by session virtual next seq */
+        /* 主动关闭 */
         f_tcp_header->seq = htonl(s->vir_next_seq);
     } else {
-        /* seq determined by backend ack seq */
+        /* 被动关闭 */
         f_tcp_header->seq = tcp_header->ack_seq;
     }
     s->sm.unack_pack_omit_save_flag = 1;
@@ -1516,7 +1504,7 @@ send_faked_ack(session_t *s, tc_ip_header_t *ip_header,
 }
 
 /*
- * send faked reset packet to backend from the backend packet
+ * 根据测试服务器的响应包，来伪造reset数据包并发送出去
  */
 static void 
 send_faked_rst(session_t *s, tc_ip_header_t *ip_header,
@@ -1562,8 +1550,7 @@ send_faked_rst(session_t *s, tc_ip_header_t *ip_header,
 }
 
 /*
- * fake the first handshake packet for intercepting already 
- * connected online packets
+ * 伪造第一次握手数据包
  */
 static void
 fake_syn(session_t *s, tc_ip_header_t *ip_header, 
@@ -1599,7 +1586,7 @@ fake_syn(session_t *s, tc_ip_header_t *ip_header,
     }
         
 #if (!TCPCOPY_SINGLE)
-    /* send route info to backend */
+    /* 发送第一次握手数据包过去之前，先传递路由信息 */
     result = send_router_info(s, CLIENT_ADD);
     if (!result) {
         return;
@@ -1616,6 +1603,7 @@ fake_syn(session_t *s, tc_ip_header_t *ip_header,
     }
 }
 
+/* 检测来自测试服务器响应包的ack seq */
 static int
 check_backend_ack(session_t *s, tc_ip_header_t *ip_header,
          tc_tcp_header_t *tcp_header, uint32_t seq, 
@@ -1624,7 +1612,7 @@ check_backend_ack(session_t *s, tc_ip_header_t *ip_header,
     bool slide_window_empty = false;
 
     s->sm.resp_slow = 0;
-    /* if ack from test server is more than what we expect */
+    /* 如果测试服务器回应的ack seq大于我们所期望的ack seq */
     if (after(ack, s->vir_next_seq)) {
         tc_log_info(LOG_NOTICE, 0, "ack more than vir next seq");
         if (!s->sm.resp_syn_received) {
@@ -1635,14 +1623,13 @@ check_backend_ack(session_t *s, tc_ip_header_t *ip_header,
         s->vir_next_seq = ack;
     } else if (before(ack, s->vir_next_seq)) {
 
-        /* it will not be true for paper mode */
+        /* 如果测试服务器回应的ack seq小于我们所期望的ack seq,说明测试服务器反应慢 */
         s->sm.resp_slow = 1;
-        /* if ack from test server is less than what we expect */
         tc_log_debug3(LOG_DEBUG, 0, "bak_ack less than vir_next_seq:%u,%u,p:%u",
                 ack, s->vir_next_seq, s->src_h_port);
 
         if (!s->sm.resp_syn_received) {
-            /* try to eliminate the tcp state of backend */
+            /* 如果所对应的session之前没有接收到第二次握手数据包,就清理此会话过程 */
             send_faked_rst(s, ip_header, tcp_header);
             s->sm.sess_over = 1;
             return DISP_STOP;
@@ -1656,16 +1643,16 @@ check_backend_ack(session_t *s, tc_ip_header_t *ip_header,
             }
             return DISP_STOP;
         } else {
-            /* simulaneous close */
+            /* 判断是否同时关闭连接 */
             if (s->sm.src_closed && tcp_header->fin) {
                 s->sm.simul_closing = 1;
             }
         }
 
-        /* when the slide window in test server is full */
+        /* 判断测试服务器针对此会话的tcp接收缓冲区是否满了 */
         if (tcp_header->window == 0) {
             tc_log_info(LOG_NOTICE, 0, "slide window zero:%u", s->src_h_port);
-            /* Although slide window is full, it may require retransmission */
+            /* 即使满了，也有可能需要重传 */
             if (!s->sm.last_window_full) {
                 s->resp_last_ack_seq = ack;
                 s->resp_last_seq     = seq;
@@ -1693,26 +1680,25 @@ check_backend_ack(session_t *s, tc_ip_header_t *ip_header,
         }
 
         if (cont_len > 0) {
-            /* no retransmission check when packet has payload */
+            /* 如果这次响应包是带有payload的，那么就不需要进行重传检测 */
             s->resp_last_same_ack_num = 0;
             return DISP_CONTINUE;
         }
 
-        /* check if it needs retransmission */
+        /* 判断是否需要重传 */
         if (!tcp_header->fin && seq == s->resp_last_seq
                 && ack == s->resp_last_ack_seq)
         {
             s->resp_last_same_ack_num++;
-            /* a packet loss when receving three acknowledgement duplicates */
+            /* 如果连续接收到重复的确认包，那么就意味着需要快速重传 */
             if (s->resp_last_same_ack_num > 2) {
 
-                /* retransmission needed */
                 tc_log_info(LOG_WARN, 0, "bak lost packs:%u,same ack:%d", 
                         s->src_h_port, s->resp_last_same_ack_num);
 
                 if (!s->sm.vir_already_retransmit) {
                     if (!retransmit_packets(s, ack)) {
-                        /* retransmit failure, send reset */
+                        /* 重传失败，发送reset数据包给测试服务器 */
                         send_faked_rst(s, ip_header, tcp_header);
                         s->sm.sess_over = 1;
                         return DISP_STOP;
@@ -1724,7 +1710,7 @@ check_backend_ack(session_t *s, tc_ip_header_t *ip_header,
                 }
 
                 if (slide_window_empty) {
-                    /* send reserved packets when slide window available */
+                    /* 当测试服务器的tcp缓冲区可以接受数据了，发送本会话所缓存的数据包 */
                     send_reserved_packets(s);
                 }
                 return DISP_STOP;
@@ -1735,7 +1721,7 @@ check_backend_ack(session_t *s, tc_ip_header_t *ip_header,
     return DISP_CONTINUE;
 }
 
-
+/* 获取tcp的options选项 */
 static void 
 retrieve_options(session_t *s, int direction, tc_tcp_header_t *tcp_header)
 {
@@ -1804,7 +1790,7 @@ retrieve_options(session_t *s, int direction, tc_tcp_header_t *tcp_header)
     return;
 }
 
-
+/* 处理来自测试服务器的第二次握手数据包 */
 static void
 process_back_syn(session_t *s, tc_ip_header_t *ip_header,
         tc_tcp_header_t *tcp_header)
@@ -1840,6 +1826,7 @@ process_back_syn(session_t *s, tc_ip_header_t *ip_header,
 
 }
 
+/* 处理来自测试服务器的fin数据包 */
 static void
 process_back_fin(session_t *s, tc_ip_header_t *ip_header,
         tc_tcp_header_t *tcp_header)
@@ -1852,27 +1839,18 @@ process_back_fin(session_t *s, tc_ip_header_t *ip_header,
     send_faked_ack(s, ip_header, tcp_header, s->sm.simul_closing?true:false);
 
     if (!s->sm.src_closed) {
-        /* 
-         * add seq here in order to keep the rst packet's ack correct
-         * because it sends two packets here 
-         */
         tcp_header->seq = htonl(ntohl(tcp_header->seq) + 1);
-        /* send the constructed reset packet to backend */
+        /* 再次传递reset数据包给测试服务器 */
         send_faked_rst(s, ip_header, tcp_header);
     }
-    /* 
-     * Why session over in such situations?
-     * Just for releasing router info.
-     * Too many router info will slow the intercept program 
-     */
     s->sm.sess_over = 1;
 }
 
 
 
 /*
- * processing backend packets
- * TODO (Have not considered TCP Keepalive situations)
+ * 处理来自测试服务器的响应包
+ * TODO (还未考虑TCP Keepalive情况)
  */
 void
 process_backend_packet(session_t *s, tc_ip_header_t *ip_header,
@@ -1893,7 +1871,6 @@ process_backend_packet(session_t *s, tc_ip_header_t *ip_header,
         return;
     }
 
-    /* retrieve packet info */
     seq      = ntohl(tcp_header->seq);
     ack      = ntohl(tcp_header->ack_seq);
     tot_len  = ntohs(ip_header->tot_len);
@@ -1917,7 +1894,6 @@ process_backend_packet(session_t *s, tc_ip_header_t *ip_header,
 
     if (cont_len > 0) {
 
-        /* calculate the total successful retransmisssons */
         if (s->sm.vir_new_retransmit) {
             retrans_succ_cnt++;
             s->sm.vir_new_retransmit = 0;
@@ -1933,7 +1909,6 @@ process_backend_packet(session_t *s, tc_ip_header_t *ip_header,
         s->vir_ack_seq = tcp_header->seq;
     }
 
-    /* need to check ack */
     if (check_backend_ack(s, ip_header, tcp_header, seq, ack, cont_len) 
             == DISP_STOP) {
         s->resp_last_ack_seq = ack;
@@ -1943,27 +1918,22 @@ process_backend_packet(session_t *s, tc_ip_header_t *ip_header,
 
     s->resp_last_seq     = seq;
     s->resp_last_ack_seq = ack;
-    /* update session's retransmisson packets */
     update_retransmission_packets(s);
 
-     /* process syn, fin or ack packet here */
     if (tcp_header->syn) {
 
         s->vir_ack_seq = htonl(ntohl(s->vir_ack_seq) + 1);
         if (!s->sm.resp_syn_received) {
-            /* process syn packet */
             process_back_syn(s, ip_header, tcp_header);
         } 
         return;
     } else if (tcp_header->fin) {
 
         s->vir_ack_seq = htonl(ntohl(s->vir_ack_seq) + 1);
-        /* process fin packet */
         process_back_fin(s, ip_header, tcp_header);
         return;
     } else if (tcp_header->ack) {
 
-        /* process ack packet */
         if (s->sm.src_closed && s->sm.dst_closed) {
             s->sm.sess_over = 1;
             return;
@@ -1972,17 +1942,18 @@ process_backend_packet(session_t *s, tc_ip_header_t *ip_header,
 
     if (!s->sm.resp_syn_received) {
 
+        /* 如果收到了之前会话过程中的残留的响应包 */
         tc_log_info(LOG_NOTICE, 0, "unbelievable:%u", s->src_h_port);
         tc_log_trace(LOG_NOTICE, 0, BACKEND_FLAG, ip_header, tcp_header);
-        /* try to solve backend's obstacle */
+        /* 清理测试服务器的tcp资源,以便扫清会话障碍 */
         send_faked_rst(s, ip_header, tcp_header);
         s->sm.sess_over = 1;
         return;
     }
 
     /* 
-     * It is nontrivial to check if the packet is the last packet 
-     * of the response
+     * 由于没有解析上层协议内容，
+     * 导致无法判断这个带有payload的响应包是否是请求的最后一个响应包 
      */
     if (cont_len > 0) {
 
@@ -1993,11 +1964,10 @@ process_backend_packet(session_t *s, tc_ip_header_t *ip_header,
             }
         }
 
-        /* TODO Why mysql does not need this packet ? */
         send_faked_ack(s, ip_header, tcp_header, true);
 
         if (tcp_header->window == 0) {
-            /* busy now, don't transmit any more content */
+            /* 如果测试服务器的tcp的缓冲区满了，就返回 */
             return;
         }
             if (s->sm.candidate_response_waiting)
@@ -2011,7 +1981,7 @@ process_backend_packet(session_t *s, tc_ip_header_t *ip_header,
                 return;
             }
     } else {
-        /* no content in packet */
+        /* 不带payload的数据包处理过程 */
 
         if (tcp_header->window == 0) {
             return;
@@ -2027,6 +1997,7 @@ process_backend_packet(session_t *s, tc_ip_header_t *ip_header,
 }
 
 
+/* 处理捕获的来自客户端的reset数据包 */
 static void
 process_client_rst(session_t *s, unsigned char *frame, 
         tc_ip_header_t *ip_header, tc_tcp_header_t *tcp_header)  
@@ -2050,6 +2021,7 @@ process_client_rst(session_t *s, unsigned char *frame,
 }
 
 
+/* 处理捕获的来自客户端的第一次握手数据包 */
 static void
 process_client_syn(session_t *s, unsigned char *frame,
         tc_ip_header_t *ip_header, tc_tcp_header_t *tcp_header)  
@@ -2059,6 +2031,7 @@ process_client_syn(session_t *s, unsigned char *frame,
     wrap_send_ip_packet(s, frame, true);
 }
 
+/* 处理捕获的来自客户端的fin数据包 */
 static int
 process_client_fin(session_t *s, unsigned char *frame,
         tc_ip_header_t *ip_header, tc_tcp_header_t *tcp_header)  
@@ -2086,7 +2059,7 @@ process_client_fin(session_t *s, unsigned char *frame,
         return DISP_CONTINUE;
     }
 
-    /* practical experience */
+    /* 根据经验 */
     if (s->resp_last_ack_seq == ntohl(tcp_header->seq)) {
         if (s->sm.candidate_response_waiting) {
             save_packet(s->unsend_packets, ip_header, tcp_header);
@@ -2111,9 +2084,7 @@ process_client_fin(session_t *s, unsigned char *frame,
 
 
 /* 
- * When the connection to the backend is closed, we 
- * reestablish the connection and 
- * reserve all coming packets for later disposure
+ * 当测试服务器提前关闭会话过程，需要重新建立会话过程
  */
 static void
 proc_clt_cont_when_bak_closed(session_t *s, tc_ip_header_t *ip_header,
@@ -2129,14 +2100,14 @@ proc_clt_cont_when_bak_closed(session_t *s, tc_ip_header_t *ip_header,
     }
 
     session_init(s, SESS_KEEPALIVE);
-    /* It will change src port when setting true */
+    /* 将改变源端口，以绕开timewait问题 */
     fake_syn(s, ip_header, tcp_header, true);
     save_packet(s->unsend_packets, ip_header, tcp_header);
 
 }
 
 
-/* check the current packet be saved or not */
+/* 检测捕获到的客户端数据包是否需要被缓存住 */
 static int 
 check_pack_save_or_not(session_t *s, tc_ip_header_t *ip_header,
         tc_tcp_header_t *tcp_header, int *is_new_req)
@@ -2147,11 +2118,9 @@ check_pack_save_or_not(session_t *s, tc_ip_header_t *ip_header,
     *is_new_req  = 0;
 
     /*
-     * If the ack seq of the last content packet is not equal to 
-     * it of the current content packet, we consider 
-     * the current packet to be the packet of the new request.
-     * Although it is not always rigtht, it works well with the help of 
-     * activate_dead_sessions function
+     * 如果之前的带有payload的数据包的ack seq不同于当前带有payload的数据包的ack seq，
+     * 那么我们就认为当前的数据包是新的请求的数据包。
+     * 尽管这个结论并不一定总是正确，但对于大部分场合，是适用的
      */
     if (s->req_cont_last_ack_seq != s->req_cont_cur_ack_seq) {
         *is_new_req = 1;
@@ -2180,6 +2149,7 @@ check_pack_save_or_not(session_t *s, tc_ip_header_t *ip_header,
 }
 
 
+/* 检测是否需要等待晚到的数据包 */
 static int
 check_wait_prev_packet(session_t *s, unsigned char *frame,
         tc_ip_header_t *ip_header, tc_tcp_header_t *tcp_header, 
@@ -2200,7 +2170,6 @@ check_wait_prev_packet(session_t *s, unsigned char *frame,
         if (s->sm.is_waiting_previous_packet) {
             s->sm.is_waiting_previous_packet = 0;
             s->sm.candidate_response_waiting = 1;
-            /* Send the packet and reserved packets */
             wrap_send_ip_packet(s, frame, true);
             send_reserved_packets(s);
             return DISP_STOP;
@@ -2211,7 +2180,7 @@ check_wait_prev_packet(session_t *s, unsigned char *frame,
 
         retransmit_seq = s->vir_next_seq - cont_len;
         if (!after(cur_seq, retransmit_seq)) {
-            /* retransmission packet from client */
+            /* 检测出这是来自客户端的重传的数据包，可以大致判断在线压力的情况 */
             tc_log_debug1(LOG_DEBUG, 0, "retransmit from clt:%u",
                     s->src_h_port);
             if (tcp_header->fin) {
@@ -2228,6 +2197,7 @@ check_wait_prev_packet(session_t *s, unsigned char *frame,
     }
 }
 
+/* 检测是否是同一个请求的数据包 */
 static int
 is_continuous_packet(session_t *s, unsigned char *frame,
         tc_ip_header_t *ip_header, tc_tcp_header_t *tcp_header)
@@ -2245,7 +2215,7 @@ is_continuous_packet(session_t *s, unsigned char *frame,
     return DISP_CONTINUE;
 }
 
-/* process client packet info after the main processing */
+/* 处理客户端数据包的最后一道处理过程 */
 static void
 process_clt_afer_filtering(session_t *s, unsigned char *frame,
         tc_ip_header_t *ip_header, tc_tcp_header_t *tcp_header, uint16_t len)
@@ -2269,9 +2239,9 @@ process_clt_afer_filtering(session_t *s, unsigned char *frame,
 
 
 /*
- * processing client packets
+ * 处理来自客户端的数据包
  * TODO 
- * 1)TCP Keepalive feature needs to be checked
+ * 1)未考虑TCP Keepalive featured
  * 2)TCP is always allowed to send 1 byte of data 
  *   beyond the end of a closed window which confuses TCPCopy.
  * 
@@ -2286,24 +2256,23 @@ process_client_packet(session_t *s, unsigned char *frame,
 
     tc_log_debug_trace(LOG_DEBUG, 0, CLIENT_FLAG, ip_header, tcp_header);
 
-    /* change source port for multiple copying, etc */
     if (s->sm.port_transfered != 0) {
+        /* 修改源端口，目的是为多重复制等场合 */
         tcp_header->source = s->faked_src_port;
     } 
 
     s->src_h_port = ntohs(tcp_header->source);
 
-    /* if the packet is the next session's packet */
+    /* 判断这个数据包是否是具有同样会话key的下一个会话的数据包 */
     if (s->sm.sess_more) {
-        /* TODO not always correct because of this */
         save_packet(s->next_sess_packs, ip_header, tcp_header);
         tc_log_debug1(LOG_DEBUG, 0, "buffer for next session:%u",
                 s->src_h_port);
         return;
     }
 
-    /* if slide window is full */
     if (s->sm.last_window_full) {
+        /* 如果测试服务器针对此会话的tcp接收缓冲区满了 */
         save_packet(s->unsend_packets, ip_header, tcp_header);
         return;
     }
@@ -2311,40 +2280,41 @@ process_client_packet(session_t *s, unsigned char *frame,
     s->online_addr  = ip_header->daddr;
     s->online_port  = tcp_header->dest;
 
-    /* Syn packet has been sent to back, but not recv back's syn */
     if (s->sm.status == SYN_SENT) {
+        /* 如果还没有收到第二次握手数据包，则缓存住客户端的数据包 */
         save_packet(s->unsend_packets, ip_header, tcp_header);
         return;
     }
 
-    /* process the reset packet */
     if (tcp_header->rst) {
+        /* 处理reset数据包 */
         process_client_rst(s, frame, ip_header, tcp_header);
         return;
     }
 
-    /* process the syn packet */
     if (tcp_header->syn) {
+        /* 处理syn数据包 */
         process_client_syn(s, frame, ip_header, tcp_header);
         return;
     }
 
-    /* process the fin packet */
     if (tcp_header->fin) {
+        /* 处理fin数据包 */
         if (process_client_fin(s, frame, ip_header, tcp_header) == DISP_STOP) {
             return;
         }
     }
 
     if (!s->sm.recv_client_close) {
+        /* 当还没有捕获到客户端的关闭数据包，记录下相关信息 */
         s->req_ack_before_fin = ntohl(tcp_header->ack_seq);
         s->sm.record_ack_before_fin = 1;
         tc_log_debug2(LOG_DEBUG, 0, "record:%u, p:%u",
                 s->req_ack_before_fin, s->src_h_port);
     }
 
-    /* if not receiving syn packet */ 
     if (!s->sm.req_syn_ok) {
+        /* 如果没有机会收到客户端的syn数据包*/
         s->sm.req_halfway_intercepted = 1;
         fake_syn(s, ip_header, tcp_header, false);
         save_packet(s->unsend_packets, ip_header, tcp_header);
@@ -2357,17 +2327,14 @@ process_client_packet(session_t *s, unsigned char *frame,
     }
 
 
-    /* retrieve the content length of tcp payload */
     cont_len = TCP_PAYLOAD_LENGTH(ip_header, tcp_header);
 
     if (cont_len > 0) {
-        /* update ack seq values for checking a new request */
         s->req_cont_last_ack_seq = s->req_cont_cur_ack_seq;
         s->req_cont_cur_ack_seq  = ntohl(tcp_header->ack_seq);
         tc_log_debug2(LOG_DEBUG, 0, "cont len:%d,p:%u",
                 cont_len, s->src_h_port);
         if (s->sm.dst_closed || s->sm.reset_sent) {
-            /* when backend is closed or we have sent rst packet */
             proc_clt_cont_when_bak_closed(s, ip_header, tcp_header);
             return;
         }
@@ -2381,7 +2348,7 @@ process_client_packet(session_t *s, unsigned char *frame,
             return;
         }
 
-        /* check if the packet is to be saved for later use */
+        /* 检测是否需要缓存住客户端的数据包 */
         if (s->sm.candidate_response_waiting) {
             if (check_pack_save_or_not(s, ip_header, tcp_header, &is_new_req)
                     == DISP_STOP)
@@ -2390,14 +2357,14 @@ process_client_packet(session_t *s, unsigned char *frame,
             }
         }
 
-        /* check if current session needs to wait prevous packet */
+        /* 检测是否需要等待后到的数据包 */
         if (check_wait_prev_packet(s, frame, ip_header, tcp_header, cont_len)
                 == DISP_STOP)
         {
             return;
         }
 
-        /* check if it is a continuous packet */
+        /* 检测是否是同一个请求的数据包 */
         if (!is_new_req && is_continuous_packet(s, frame, ip_header, tcp_header)
                 == DISP_STOP)
         {
@@ -2407,7 +2374,7 @@ process_client_packet(session_t *s, unsigned char *frame,
         tc_log_debug0(LOG_DEBUG, 0, "a new request from client");
     }
 
-    /* post disposure */
+    /* 后处理过程 */
     process_clt_afer_filtering(s, frame, ip_header, tcp_header, cont_len);
 }
 
@@ -2436,7 +2403,7 @@ restore_buffered_next_session(session_t *s)
 
 
 /*
- * filter packets 
+ * 对请求数据包进行过滤
  */
 bool
 is_packet_needed(unsigned char *packet)
@@ -2450,7 +2417,7 @@ is_packet_needed(unsigned char *packet)
 
     captured_cnt++;
 
-    /* check if it is a tcp packet(could be removed) */
+    /* 检测是否是tcp数据包 */
     if (ip_header->protocol != IPPROTO_TCP) {
         return is_needed;
     }
@@ -2471,7 +2438,7 @@ is_packet_needed(unsigned char *packet)
         return is_needed;
     }
 
-    /* filter the packets we do care about */
+    /* 过滤出我们复制所关心的数据包 */
     if (LOCAL == check_pack_src(&(clt_settings.transfer), 
                 ip_header->daddr, tcp_header->dest, CHECK_DEST)) {
         if (clt_settings.target_localhost) {
@@ -2513,7 +2480,7 @@ is_packet_needed(unsigned char *packet)
 
 
 /*
- * output statistics
+ * 输出统计日志
  */
 void
 output_stat()
@@ -2565,18 +2532,16 @@ output_stat()
 void
 tc_interval_dispose(tc_event_timer_t *evt)
 {
-    /* output stat */
     output_stat();
 
-    /* clear timeout sessions */
     clear_timeout_sessions();
 
-    /* activate dead session */
     activate_dead_sessions();
 
     evt->msec = tc_current_time_msec + 5000;
 }
 
+/* 原始处理来自测试服务器的数据包 */
 bool
 process_out(unsigned char *packet)
 {
@@ -2596,11 +2561,9 @@ process_out(unsigned char *packet)
     tcp_header = (tc_tcp_header_t *) ((char *) ip_header + size_ip);
 
 
-    /* when the packet comes from the targeted test machine */
     key = get_key(ip_header->daddr, tcp_header->dest);
     s = hash_find(sessions_table, key);
     if (s == NULL) {
-        /* give another chance for port changed */
         ori_port = hash_find(tf_port_table, key);
         if (ori_port != NULL) {
             key = get_key(ip_header->daddr, (uint16_t) (long) ori_port);
@@ -2614,7 +2577,7 @@ process_out(unsigned char *packet)
         process_backend_packet(s, ip_header, tcp_header);
         if (check_session_over(s)) {
             if (s->sm.sess_more) {
-                /* restore the next session which has the same key */
+                /* 恢复捕获到的同一个会话key的下一个会话过程 */
                 session_init_for_next(s);
                 tc_log_info(LOG_NOTICE, 0, "init for next sess from bak");
                 restore_buffered_next_session(s);
@@ -2636,6 +2599,7 @@ process_out(unsigned char *packet)
     return true;
 }
 
+/* 原始处理来自客户端的数据包 */
 bool
 process_in(unsigned char *frame)
 {
@@ -2658,9 +2622,8 @@ process_in(unsigned char *frame)
     size_ip    = ip_header->ihl << 2;
     tcp_header = (tc_tcp_header_t *) ((char *) ip_header + size_ip);
 
-    /* when the packet comes from client */
     if (clt_settings.factor) {
-        /* change client source port */
+        /* 改变源端口 */
         tcp_header->source = get_port_from_shift(tcp_header->source,
                 clt_settings.rand_port_shifted, clt_settings.factor);
     }
@@ -2669,14 +2632,13 @@ process_in(unsigned char *frame)
 
         s  = hash_find(sessions_table, key);
         if (s) {
-            /* check if it is a duplicate syn */
+            /* 检测是否是重复的syn数据包 */
             if (tcp_header->seq == s->req_last_syn_seq) {
                 tc_log_debug0(LOG_DEBUG, 0, "duplicate syn");
                 return true;
             } else {
                 /*
-                 * buffer the next session to current session
-                 * (only support one more session which has the hash key)
+                 * 缓存住下一个同样具有key的会话
                  */
                 s->sm.sess_more = 1;
                 if (s->next_sess_packs) {
@@ -2695,7 +2657,6 @@ process_in(unsigned char *frame)
                 return true;
             }
         } else {
-            /* create a new session */
             s = session_add(key, ip_header, tcp_header);
             if (s == NULL) {
                 return true;
@@ -2732,7 +2693,7 @@ process_in(unsigned char *frame)
                 }
             }
         } else {
-            /* check if we can pad tcp handshake */
+            /* 检测是否需要补充三次握手 */
             if (TCP_PAYLOAD_LENGTH(ip_header, tcp_header) > 0) {
                 s = session_add(key, ip_header, tcp_header);
                 if (s == NULL) {
