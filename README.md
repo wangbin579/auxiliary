@@ -36,7 +36,7 @@ The TCPCopy server (intercept) is responsible for passing the response header to
 It should be noticed that the responses from the test server are dropped at the network layer of the test server and not return to the end-user by default.
 
 
-![tcpcopy](https://raw.github.com/wangbin579/auxiliary/master/images/traditional_usage.GIF)
+![tcpcopy](https://github.com/wangbin579/auxiliary/blob/master/images/tcpcopy.GIF)
 
 Figure 2 shows the architecture of using TCPCopy to do realistic testing of Internet server applications. In the online production system, when the end-users access the online application server, the application server may visit the backend services to process users’ requests if needed and return feedbacks to end-users. Meanwhile, the TCPCopy Client (tcpcopy) is deployed on the production server to copy and send the reproduced workload to the test server. In the test system, the reproduced flow accesses the test application server, which would also visit the backend services if needed and then return feedbacks. The TCPCopy Server (intercept)  handles these feedbacks and returns the necessary response information to the TCPCopy Client (tcpcopy). In addition, as both the TCPCopy Client (tcpcopy) and the TCPCopy Server (intercept) could be deployed on several servers, TCPCopy has good scalability. It could copy live flow on one or several production servers to one test server.  
 
